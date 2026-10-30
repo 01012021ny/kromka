@@ -1,3 +1,4 @@
+// @ts-check
 // Main-thread facade with the same surface as Sim; the solver itself runs in a Web Worker
 import { Sim } from './sim.js';
 import { findPiece } from './patterns.js';

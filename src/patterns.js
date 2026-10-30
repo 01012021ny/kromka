@@ -1,3 +1,4 @@
+// @ts-check
 // Pattern pieces: data model, drafting from body measurements, editing ops (corners, bends, cuts, seams)
 import { uid, cubic, line, polyLen, resample, area, dist, clamp, lerp, catmull, inside, polyDist, segX, deep, bbox, centroid } from './util.js';
 

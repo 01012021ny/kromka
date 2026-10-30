@@ -1,3 +1,4 @@
+// @ts-check
 // Per-piece texture canvas: fabric + overlays (colour blocks / patches) + prints + brush strokes + stitching, all in pattern space
 import { bbox, shade, rng } from './util.js';
 import { paintFabric } from './materials.js';

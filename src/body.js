@@ -1,3 +1,4 @@
+// @ts-check
 // Parametric mannequin: measurements → lofted mesh + analytic SDF collider (same data, so cloth sits exactly on the visible body)
 import * as THREE from 'three';
 import { lerp, clamp } from './util.js';
@@ -273,7 +274,7 @@ export class Body {
     if (!opts.noGrid) this.buildGrid();
   }
   _mesh(fa, ff, fb, fz, rings) {
-    for (const c of [...this.group.children]) { this.group.remove(c); c.geometry?.dispose(); }
+    for (const c of [...this.group.children]) { this.group.remove(c); /** @type {THREE.Mesh} */ (c).geometry?.dispose(); }
     const N = 56;
     const y0 = rings[0].y, y1 = rings[rings.length - 1].y;
     const tr = [];

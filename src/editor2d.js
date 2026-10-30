@@ -1,3 +1,4 @@
+// @ts-check
 // 2D pattern editor: pan/zoom, select/drag corners & bends, cut (curve / freehand), overlays (layers), brush, prints, hardware, seams
 import { dist, polyDist, inside, centroid, bbox, catmull, simplify, fmt, uid, area, polyLen } from './util.js';
 import { edgePts, edgeIdx, cutOutline, deformCorner, deformEdge, mirrorCorner, mirrorEdgeK, splitEdge, removeCorner, cutPiece, seamOf, seamLengths, edgeK, edgeMeta } from './patterns.js';
@@ -96,7 +97,8 @@ export class Editor2D {
     cv.addEventListener('pointerup', (e) => this.up(e));
     cv.addEventListener('dblclick', (e) => { if (this.app.tool === 'cut' && this.tmp?.ctrl?.length >= 2) this.finishCut(); });
     window.addEventListener('keydown', (e) => {
-      if (e.target.closest && e.target.closest('input,textarea,select')) return;
+      const t = /** @type {Element} */ (e.target);
+      if (t.closest && t.closest('input,textarea,select')) return;
       if (e.key === 'Enter' && this.app.tool === 'cut') this.finishCut();
       if (e.key === 'Escape') { this.tmp = null; this.dirty = true; }
     });

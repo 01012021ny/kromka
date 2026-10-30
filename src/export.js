@@ -1,3 +1,4 @@
+// @ts-check
 // Production exports: tiled A4 PDF at 1:1, DXF (AAMA/ASTM D6673-style blocks), HPGL/PLT, ZIP container, SVG with size nest
 import { cutOutline, edgePts, seamOf } from './patterns.js';
 import { bbox, centroid, fmt, esc, polyLen } from './util.js';

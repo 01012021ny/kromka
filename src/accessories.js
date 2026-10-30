@@ -1,3 +1,4 @@
+// @ts-check
 // Parametric footwear and accessories (meshes + colliders / cinch constraints)
 import * as THREE from 'three';
 import { mkCap } from './body.js';
@@ -140,7 +141,7 @@ export function buildShoe(body, leg, p, upperMat, soleMat) {
   }
   // collider for the foot
   body.extraCaps.push(mkCap(V(x0, sole + 3.5, heelZ + 3), V(x0 + sg * 1.2, sole + 2.5, heelZ + L - 3), 4.6, 3.6));
-  grp.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  grp.traverse((o) => { if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; } });
   return grp;
 }
 
@@ -260,6 +261,6 @@ export function buildAccessory(acc, body, mats3, sim) {
       grp.add(new THREE.Mesh(loftGeom(cuff, false, false), mats3.knit));
     }
   }
-  grp.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  grp.traverse((o) => { if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; } });
   return grp;
 }

@@ -1,0 +1,16 @@
+{
+  // Проверка типов поверх обычного JS: сборка не меняется (esbuild), файлы включаются по одному через // @ts-check
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2022", "dom", "dom.iterable", "webworker.importscripts"],
+    "types": [],
+    "skipLibCheck": true,
+    "strict": false
+  },
+  "include": ["src/**/*.js", "src/**/*.d.ts"]
+}

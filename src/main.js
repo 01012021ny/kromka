@@ -1,3 +1,4 @@
+// @ts-check
 import * as THREE from 'three';
 import { Body, BODY_DEFAULT } from './body.js';
 import { GARMENT_PRESETS, GENERATORS, buildPiece, seamOf, findPiece } from './patterns.js';
@@ -290,12 +291,12 @@ app.loadImage = (file, cb) => {
     S.images[id] = rd.result;
     const im = new Image();
     im.onload = () => { app.imgRatio[id] = im.height / im.width; cb && cb(id); };
-    im.src = rd.result;
+    im.src = /** @type {string} */ (rd.result);
   };
   rd.readAsDataURL(file);
 };
 document.getElementById('fileImg').addEventListener('change', (e) => {
-  const f = e.target.files[0]; e.target.value = '';
+  const inp = /** @type {HTMLInputElement} */ (e.target), f = inp.files[0]; inp.value = '';
   if (!f) return;
   app.loadImage(f, (id) => {
     app.pendingPrint = id;
@@ -401,9 +402,9 @@ app.save = async (filename, data) => {
   } catch (e) { app.toast('Не удалось сохранить файл в этом окне', 'neg'); }
 };
 document.getElementById('fileProj').addEventListener('change', (e) => {
-  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  const inp = /** @type {HTMLInputElement} */ (e.target), f = inp.files[0]; inp.value = ''; if (!f) return;
   const rd = new FileReader();
-  rd.onload = () => { try { app.loadProject(JSON.parse(rd.result)); app.toast('Проект открыт', 'pos'); } catch (err) { app.toast('Не удалось прочитать файл проекта', 'neg'); } };
+  rd.onload = () => { try { app.loadProject(JSON.parse(/** @type {string} */ (rd.result))); app.toast('Проект открыт', 'pos'); } catch (err) { app.toast('Не удалось прочитать файл проекта', 'neg'); } };
   rd.readAsText(f);
 });
 

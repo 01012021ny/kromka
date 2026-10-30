@@ -1,3 +1,4 @@
+// @ts-check
 // Fibres, constructions, presets and physics derivation
 import * as THREE from 'three';
 import { clamp, rng, hexToRgb, uid, shade } from './util.js';

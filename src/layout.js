@@ -1,3 +1,4 @@
+// @ts-check
 // Marker making: raster bottom-left nesting on a fabric roll, utilisation, offcuts and what they can become
 import { cutOutline, pieceArea } from './patterns.js';
 import { area, bbox, clamp } from './util.js';

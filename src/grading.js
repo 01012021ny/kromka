@@ -1,3 +1,4 @@
+// @ts-check
 // Size grading: regenerate the base block for neighbouring sizes, build a displacement field
 // per generated piece and apply it to the user's edited pieces (cuts, bends, overlays keep their design intent).
 import { GENERATORS, edgePts, nEdges } from './patterns.js';

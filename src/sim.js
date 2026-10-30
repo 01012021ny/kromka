@@ -1,3 +1,4 @@
+// @ts-check
 // XPBD cloth: pattern pieces → triangle meshes → placed around the body → sewn → draped
 import Delaunator from 'delaunator';
 import { resample, polyLen, inside, polyDist, bbox, clamp, area } from './util.js';
@@ -212,6 +213,10 @@ export function seamRev(g, s, body) {
 
 // ───────── simulator ─────────
 export class Sim {
+  // particle buffers, filled by build()
+  /** @type {Float32Array} */ x; /** @type {Float32Array} */ v; /** @type {Float32Array} */ w; /** @type {Float32Array} */ mass;
+  /** @type {Float32Array} */ thick; /** @type {Float32Array} */ fric; /** @type {Float32Array} */ damp; /** @type {Float32Array} */ nrm; /** @type {Float32Array} */ r2d;
+  /** @type {Uint8Array} */ layer; /** @type {Uint8Array} */ onArm; /** @type {Uint8Array} */ bnd; /** @type {Int32Array} */ pidx;
   constructor(body) {
     this.body = body;
     this.N = 0;

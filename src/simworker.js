@@ -1,3 +1,4 @@
+// @ts-check
 // Web Worker: runs the cloth solver off the main thread
 import { Body } from './body.js';
 import { Sim } from './sim.js';
@@ -12,7 +13,7 @@ function setBody(m) {
   body.buildGrid();
   sim.belts = m.belts || [];
 }
-function post(type, extra = {}, transfer = []) { postMessage({ type, seq, ...extra }, transfer); }
+function post(type, extra = {}, transfer = []) { /** @type {(m: any, t: Transferable[]) => void} */ (postMessage)({ type, seq, ...extra }, transfer); }
 function loop() {
   timer = null;
   if (!sim.N || !sim.running || sim.settled) { post('state', { running: sim.running, settled: sim.settled, energy: sim.energy, t: sim.t }); return; }

@@ -1,3 +1,4 @@
+// @ts-check
 // ───────── geometry / misc helpers (2D pattern space in cm) ─────────
 let _uid = 1;
 export const uid = (p = 'id') => p + (_uid++).toString(36) + Math.random().toString(36).slice(2, 5);

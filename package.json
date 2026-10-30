@@ -5,6 +5,7 @@
   "scripts": {
     "build": "node build.mjs",
     "test": "node scripts/test.mjs",
+    "typecheck": "tsc -p tsconfig.json",
     "e2e": "node build.mjs && playwright test"
   },
   "keywords": [
@@ -24,6 +25,8 @@
   "private": true,
   "type": "module",
   "devDependencies": {
-    "@playwright/test": "1.63.0"
+    "@playwright/test": "1.63.0",
+    "@types/three": "0.169.0",
+    "typescript": "7.0.2"
   }
 }
