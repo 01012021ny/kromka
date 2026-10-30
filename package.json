@@ -1,0 +1,25 @@
+{
+  "name": "kromka",
+  "version": "0.2.0",
+  "description": "КРОМКА — 3D-конструктор одежды: манекен, лекала, физика тканей, градация, раскладка без отходов",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node scripts/test.mjs"
+  },
+  "keywords": [
+    "fashion",
+    "pattern-making",
+    "cloth-simulation",
+    "zero-waste",
+    "three.js"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "delaunator": "^5.1.0",
+    "esbuild": "^0.28.2",
+    "three": "^0.169.0"
+  },
+  "private": true,
+  "type": "module"
+}

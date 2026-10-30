@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>КРОМКА — студия кроя</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0b0b0c;--p1:#111113;--p2:#16161a;--p3:#1d1d21;--ln:#26262b;--ln2:#33333a;--tx:#e6e1d6;--tx2:#a39e93;--tx3:#6f6b64;--ac:#f2ede2;--pos:#5fae6e;--neg:#d4473b;--warn:#c9a24a;--mono:"JetBrains Mono",ui-monospace,monospace;--sans:"Inter Tight",system-ui,sans-serif}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--tx);font:13px/1.35 var(--sans);overflow:hidden}
+button{font:inherit;color:inherit;background:var(--p3);border:1px solid var(--ln2);border-radius:3px;padding:5px 9px;cursor:pointer;white-space:nowrap}
+button:hover{border-color:#55555e;background:#232329}
+button.on{background:var(--ac);color:#0b0b0c;border-color:var(--ac)}
+button.ghost{background:transparent;border-color:transparent}
+button.ghost:hover{border-color:var(--ln2)}
+button.sm{padding:3px 7px;font-size:11px}
+button.danger:hover{border-color:var(--neg);color:var(--neg)}
+input,select,textarea{font:inherit;color:var(--tx);background:#0e0e10;border:1px solid var(--ln2);border-radius:3px;padding:4px 6px}
+input[type=range]{padding:0;accent-color:#d9d3c5;width:100%;background:none;border:0}
+input[type=color]{padding:0;width:28px;height:24px;border:1px solid var(--ln2);background:none}
+input[type=number]{width:64px;font-family:var(--mono)}
+label{color:var(--tx2)}
+#app{display:grid;grid-template-rows:46px 1fr 28px;grid-template-columns:282px 1fr 300px;height:100vh}
+header{grid-column:1/4;display:flex;align-items:center;gap:14px;padding:0 12px;border-bottom:1px solid var(--ln);background:#0d0d0e}
+.brand{display:flex;align-items:baseline;gap:10px;min-width:276px}
+.brand b{font:700 17px/1 var(--sans);letter-spacing:.32em}
+.brand span{font:10px var(--mono);color:var(--tx3);letter-spacing:.08em;text-transform:uppercase}
+nav.steps{display:flex;gap:2px;flex:1}
+nav.steps button{background:transparent;border:0;border-bottom:2px solid transparent;border-radius:0;padding:12px 10px 10px;color:var(--tx2);font-size:12px;letter-spacing:.04em}
+nav.steps button i{font:10px var(--mono);font-style:normal;color:var(--tx3);margin-right:6px}
+nav.steps button.on{color:var(--ac);border-bottom-color:var(--ac);background:transparent}
+.hdr-r{display:flex;gap:6px;align-items:center}
+aside{background:var(--p1);overflow:auto;border-right:1px solid var(--ln)}
+aside#right{border-right:0;border-left:1px solid var(--ln)}
+main{display:grid;grid-template-columns:1fr 6px 1fr;min-width:0;min-height:0}
+.pane{position:relative;min-width:0;min-height:0;display:flex;flex-direction:column}
+.pane .bar{display:flex;gap:4px;align-items:center;padding:6px 8px;border-bottom:1px solid var(--ln);background:#0e0e10;flex-wrap:wrap;min-height:38px}
+.pane .bar .sep{width:1px;height:20px;background:var(--ln2);margin:0 4px}
+.pane .bar .ttl{font:10px var(--mono);color:var(--tx3);letter-spacing:.12em;text-transform:uppercase;margin-right:6px}
+.pane .stage{flex:1;position:relative;min-height:0}
+#v3d canvas,#v2d canvas{display:block}
+#split{background:var(--ln);cursor:col-resize}
+#split:hover{background:#3a3a42}
+.tool{min-width:28px;padding:3px 6px;font-size:13px}
+.tool kbd{font:9px var(--mono);color:var(--tx3);margin-left:4px}
+.tool.on kbd{color:#555}
+footer{grid-column:1/4;display:flex;align-items:center;gap:18px;padding:0 12px;border-top:1px solid var(--ln);font:11px var(--mono);color:var(--tx2);background:#0d0d0e}
+footer .hint{flex:1;color:var(--tx2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pos{color:var(--pos)}.neg{color:var(--neg)}.warn{color:var(--warn)}
+.sec{padding:12px 14px;border-bottom:1px solid var(--ln)}
+.sec h3{margin:0 0 10px;font:600 10px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--tx3);display:flex;justify-content:space-between;align-items:center}
+.sec h2{margin:0 0 4px;font:600 15px var(--sans);letter-spacing:.01em}
+.sec p.note{margin:4px 0 10px;color:var(--tx2);font-size:12px}
+.row{display:flex;align-items:center;gap:8px;margin:6px 0}
+.row>label{flex:0 0 46%;font-size:12px}
+.row .val{font:11px var(--mono);color:var(--tx);min-width:44px;text-align:right}
+.ctl{display:grid;grid-template-columns:1fr 54px;gap:4px 8px;align-items:center;margin:7px 0}
+.ctl label{grid-column:1/3;font-size:12px;display:flex;justify-content:space-between}
+.ctl label b{font:500 11px var(--mono);color:var(--tx)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.card{border:1px solid var(--ln2);border-radius:4px;padding:8px 9px;background:var(--p2);cursor:pointer;display:flex;gap:9px;align-items:center}
+.card:hover{border-color:#4a4a52}
+.card.sel{border-color:var(--ac)}
+.card .t{font-size:12.5px}
+.card .s{font:10px var(--mono);color:var(--tx3)}
+.sw{width:22px;height:22px;border-radius:3px;border:1px solid rgba(255,255,255,.15);flex:0 0 auto}
+.list{display:flex;flex-direction:column;gap:5px}
+.tree .g{border:1px solid var(--ln2);border-radius:4px;margin-bottom:6px;background:var(--p2)}
+.tree .gh{display:flex;align-items:center;gap:6px;padding:6px 8px;cursor:pointer}
+.tree .gh.sel{background:#202026}
+.tree .gh .n{flex:1;font-weight:600;font-size:12.5px}
+.tree .pc{display:flex;align-items:center;gap:6px;padding:4px 8px 4px 22px;cursor:pointer;font-size:12px;color:var(--tx2)}
+.tree .pc:hover{background:#1b1b20}
+.tree .pc.sel{color:var(--ac);background:#202026}
+.tree .sub{padding:2px 8px 2px 40px;font-size:11px;color:var(--tx3);display:flex;gap:6px;align-items:center;cursor:pointer}
+.tree .sub.sel{color:var(--ac)}
+.eye{background:none;border:0;padding:0 3px;color:var(--tx3);font-size:12px}
+.eye:hover{color:var(--ac)}
+table.e{width:100%;border-collapse:collapse;font-size:11.5px}
+table.e td,table.e th{padding:4px 3px;border-bottom:1px solid var(--ln);text-align:left}
+table.e th{font:500 9.5px var(--mono);color:var(--tx3);text-transform:uppercase;letter-spacing:.08em}
+table.e td.m{font-family:var(--mono)}
+table.e tr.sel td{background:#202026}
+table.e input[type=number]{width:40px;padding:2px 3px}
+.row select,.row input:not([type=checkbox]):not([type=color]):not([type=number]){min-width:0}
+aside select{max-width:100%}
+#right .row>label{flex:0 0 40%}
+.chip{display:inline-block;font:10px var(--mono);border:1px solid var(--ln2);border-radius:10px;padding:1px 7px;color:var(--tx2)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:12px}
+.kv dt{color:var(--tx3)}.kv dd{margin:0;font-family:var(--mono);font-size:11.5px}
+.comp{display:grid;grid-template-columns:1fr 58px 22px;gap:4px;margin:4px 0}
+.mono{font-family:var(--mono)}
+.muted{color:var(--tx3)}
+.big{font:600 22px var(--mono)}
+.stat{display:flex;flex-direction:column;gap:2px;border:1px solid var(--ln2);border-radius:4px;padding:7px 9px;background:var(--p2)}
+.stat .l{font:9.5px var(--mono);color:var(--tx3);text-transform:uppercase;letter-spacing:.1em}
+#toast{position:fixed;left:50%;bottom:44px;transform:translateX(-50%);background:#1d1d22;border:1px solid var(--ln2);padding:8px 14px;border-radius:4px;font-size:12.5px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:50;max-width:70vw}
+#toast.show{opacity:1}
+#toast.neg{border-color:var(--neg)}#toast.pos{border-color:var(--pos)}
+.overlay3d{position:absolute;left:10px;bottom:10px;font:10px var(--mono);color:var(--tx3);pointer-events:none;line-height:1.6}
+.legend{position:absolute;right:10px;bottom:10px;font:10px var(--mono);color:var(--tx2);background:rgba(12,12,13,.8);border:1px solid var(--ln2);padding:6px 8px;border-radius:3px;display:none}
+.menu{position:absolute;top:44px;right:12px;background:#151518;border:1px solid var(--ln2);border-radius:4px;padding:5px;display:none;z-index:40;min-width:260px;box-shadow:0 10px 30px rgba(0,0,0,.6)}
+.menu button{display:block;width:100%;text-align:left;background:transparent;border:0;padding:8px 10px}
+.menu button:hover{background:#222228}
+.menu .s{font:10px var(--mono);color:var(--tx3);display:block}
+#help{position:fixed;inset:0;background:rgba(5,5,6,.82);display:none;z-index:60;align-items:center;justify-content:center}
+#help .box{width:min(860px,92vw);max-height:86vh;overflow:auto;background:#111113;border:1px solid var(--ln2);border-radius:6px;padding:26px 30px}
+#help h1{font:700 22px var(--sans);letter-spacing:.24em;margin:0 0 4px}
+#help .cols{display:grid;grid-template-columns:1fr 1fr;gap:20px 30px;margin-top:18px}
+#help h4{margin:0 0 6px;font:600 10px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--tx3)}
+#help p,#help li{color:var(--tx2);font-size:12.5px;margin:0 0 6px}
+#help ol{padding-left:18px;margin:0}
+kbd{font:10px var(--mono);border:1px solid var(--ln2);border-radius:2px;padding:0 4px;color:var(--tx)}
+#dlg{position:fixed;inset:0;background:rgba(5,5,6,.82);display:none;z-index:61;align-items:center;justify-content:center}
+#dlg .box{width:min(620px,92vw);max-height:88vh;overflow:auto;background:#111113;border:1px solid var(--ln2);border-radius:6px;padding:22px 24px}
+#dlg h4{margin:14px 0 6px;font:600 10px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--tx3)}
+#dlg label.card{cursor:pointer}
+#layoutView{position:absolute;inset:0;overflow:auto;display:none;background:#0f0f10}
+#layoutView canvas{display:block}
+.offc{border-left:2px solid var(--neg);padding:3px 0 3px 8px;margin:5px 0;font-size:11.5px;color:var(--tx2)}
+.offc b{color:var(--tx);font-family:var(--mono);font-weight:500}
+.pill{display:flex;gap:2px;background:#0b0b0c;border:1px solid var(--ln2);border-radius:3px;padding:2px}
+.pill button{border:0;background:transparent;padding:3px 8px;font-size:11px}
+.pill button.on{background:var(--ac);color:#0b0b0c}
+.libgrp{margin:10px 0 4px;font:10px var(--mono);color:var(--tx3);letter-spacing:.1em;text-transform:uppercase}
+.lib{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.lib .card{padding:6px 7px}
+.lib .card .t{font-size:11.5px}
+.help-i{display:inline-flex;width:15px;height:15px;border:1px solid var(--ln2);border-radius:50%;align-items:center;justify-content:center;font:9px var(--mono);color:var(--tx3)}
+.steps-list li{margin:6px 0;color:var(--tx2);font-size:12px}
+.steps-list li b{color:var(--tx);font-weight:500}
+::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:#2a2a30;border-radius:4px}::-webkit-scrollbar-track{background:transparent}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand"><b>КРОМКА</b><span>студия кроя · 3D · без отходов</span></div>
+    <nav class="steps" id="steps"></nav>
+    <div class="hdr-r">
+      <button class="ghost" id="bUndo" title="Отменить (Ctrl+Z)">↶</button>
+      <button class="ghost" id="bRedo" title="Повторить (Ctrl+Shift+Z)">↷</button>
+      <button id="bExport">Файл ▾</button>
+      <button class="ghost" id="bHelp" title="Как работать">?</button>
+    </div>
+    <div class="menu" id="menu"></div>
+  </header>
+  <aside id="left"></aside>
+  <main>
+    <section class="pane" id="p3d">
+      <div class="bar">
+        <span class="ttl">3D</span>
+        <button class="sm" id="bPlay" title="Пауза / запуск симуляции">❚❚ Симуляция</button>
+        <button class="sm" id="bResew" title="Заново сшить из лекал">↺ Сшить</button>
+        <button class="sm" id="bStrain" title="Карта натяжения: красным — ткань перетянута">Натяжение</button>
+        <div class="pill" id="quality" title="Плотность сетки ткани"><button data-q="3.4">Эскиз</button><button data-q="2.6" class="on">Норма</button><button data-q="2.0">Детально</button></div>
+        <div class="pill"><button data-cam="front" title="Вид спереди">Пер</button><button data-cam="side" title="Вид сбоку">Бок</button><button data-cam="back" title="Вид сзади">Спн</button></div>
+      </div>
+      <div class="stage" id="v3d"><div class="overlay3d" id="o3d"></div><div class="legend" id="legend">натяжение: <span style="color:#8c8c8c">■ норма</span> <span class="neg">■ перетянуто &gt;8%</span></div></div>
+    </section>
+    <div id="split"></div>
+    <section class="pane" id="p2d">
+      <div class="bar" id="tools2d"></div>
+      <div class="stage" id="v2dwrap"><div id="v2d" style="position:absolute;inset:0"><canvas id="c2d"></canvas></div><div id="layoutView"><canvas id="cLay"></canvas></div></div>
+    </section>
+  </main>
+  <aside id="right"></aside>
+  <footer><span class="hint" id="hint"></span><span id="stats"></span><span id="waste"></span></footer>
+</div>
+<div id="toast"></div>
+<div id="help"><div class="box" id="helpBox"></div></div>
+<input type="file" id="fileImg" accept="image/png,image/jpeg,image/webp,image/svg+xml" style="display:none">
+<input type="file" id="fileProj" accept=".json,application/json" style="display:none">
+<script>/*APP*/</script>
+</body>
+</html>

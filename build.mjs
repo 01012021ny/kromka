@@ -1,0 +1,10 @@
+import * as esbuild from 'esbuild';
+import fs from 'fs';
+const w = await esbuild.build({ entryPoints: ['src/simworker.js'], bundle: true, format: 'iife', minify: true, write: false, target: 'es2020', legalComments: 'none' });
+const workerSrc = w.outputFiles[0].text;
+const r = await esbuild.build({ entryPoints: ['src/main.js'], bundle: true, format: 'iife', minify: true, write: false, target: 'es2020', legalComments: 'none', define: { __WORKER_SRC__: JSON.stringify(workerSrc) } });
+const js = r.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
+const html = fs.readFileSync('src/template.html', 'utf8').replace('<script>/*APP*/</script>', () => '<script>' + js + '</script>');
+fs.mkdirSync('dist', { recursive: true });
+fs.writeFileSync('dist/index.html', html);
+console.log('ok', (html.length / 1024).toFixed(0) + ' KB', 'worker', (workerSrc.length / 1024).toFixed(0) + ' KB');
