@@ -14,8 +14,8 @@
     "zero-waste",
     "three.js"
   ],
-  "author": "",
-  "license": "ISC",
+  "author": "01012021ny",
+  "license": "MIT",
   "dependencies": {
     "delaunator": "^5.1.0",
     "esbuild": "^0.28.2",
