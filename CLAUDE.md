@@ -17,10 +17,12 @@
 npm ci
 npm test          # обязательно перед каждым коммитом; ~20 с, 38+ проверок
 npm run build     # dist/index.html — один самодостаточный файл
+npm run e2e       # сборка + Playwright-сценарии e2e/*.spec.js (~2 мин)
 ```
 - `dist/index.html#local` — физика в основном потоке (для отладки и e2e).
-- `e2e/*.cjs` — сценарии Playwright (нужен `npx playwright install chromium`).
-- CI (`.github/workflows/ci.yml`) гоняет тесты; `pages.yml` публикует на GitHub Pages только при зелёных тестах.
+- e2e: `e2e/fixtures.js` — `openApp`, `captureSaves`/`savedFiles` (перехват `app.save`), `clothStats`; любая ошибка страницы роняет тест.
+  Нужен `npx playwright install chromium`; версия `@playwright/test` закреплена точно — браузер должен ей соответствовать.
+- CI (`.github/workflows/ci.yml`) гоняет unit и e2e; `pages.yml` публикует на GitHub Pages только при зелёных unit и e2e.
 - Нашёл баг в физике/лекалах — сначала регрессионный тест в `tests/suite.js`, потом исправление.
 
 ## Ограничения среды, которые надо сохранять

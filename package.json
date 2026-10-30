@@ -4,7 +4,8 @@
   "description": "КРОМКА — 3D-конструктор одежды: манекен, лекала, физика тканей, градация, раскладка без отходов",
   "scripts": {
     "build": "node build.mjs",
-    "test": "node scripts/test.mjs"
+    "test": "node scripts/test.mjs",
+    "e2e": "node build.mjs && playwright test"
   },
   "keywords": [
     "fashion",
@@ -21,5 +22,8 @@
     "three": "^0.169.0"
   },
   "private": true,
-  "type": "module"
+  "type": "module",
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
 }
