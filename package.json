@@ -16,7 +16,7 @@
     "three.js"
   ],
   "author": "01012021ny",
-  "license": "MIT",
+  "license": "UNLICENSED",
   "dependencies": {
     "delaunator": "^5.1.0",
     "esbuild": "^0.28.2",

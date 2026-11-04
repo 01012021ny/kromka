@@ -321,6 +321,12 @@ export class Body {
     this.setFeetVisible(!this.hideFeet);
   }
   setFeetVisible(v) { for (const f of this.feet || []) f.visible = v; }
+  // обхват торса на высоте y (см) или null ниже шага
+  girthAt(y) {
+    if (y < this.ty0 || y > this.ty1) return null;
+    const r = this.ring(y);
+    return sePerim(r.a, r.bF, r.bB);
+  }
   // signed distance + outward normal (smooth union of torso + capsules, k = fillet size); out = [nx,ny,nz]
   sdfExact(x, y, z, out) {
     let best = 1e9, nx = 0, ny = 1, nz = 0, has = false;

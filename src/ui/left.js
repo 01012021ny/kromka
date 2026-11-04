@@ -43,7 +43,7 @@ export function renderBodyReadout(app) {
 
 function leftGarments(app, L) {
   L.innerHTML = `<div class="sec"><h2>Изделия</h2><p class="note">Базовые конструкции строятся от мерок манекена. Добавьте основу и меняйте её параметрами справа, затем — разрезами, накладками и правкой точек.</p>
-  <div class="list">${GARMENT_PRESETS.map((p) => `<div class="card" data-add="${p.id}"><div class="sw" style="background:${PRESETS.find((x) => x.id === p.mat)?.color}"></div><div style="flex:1"><div class="t">${p.name}</div><div class="s">${{ top: 'плечевое', pants: 'поясное · брюки', skirt: 'поясное · юбка', snood: 'аксессуар из ткани' }[p.gen]} · слой ${p.layer}</div></div><span class="muted">+</span></div>`).join('')}</div></div>
+  <div class="list">${GARMENT_PRESETS.map((p, i) => `${p.cat && p.cat !== GARMENT_PRESETS[i - 1]?.cat ? `<div class="grp">${p.cat}</div>` : ''}<div class="card" data-add="${p.id}"><div class="sw" style="background:${PRESETS.find((x) => x.id === p.mat)?.color}"></div><div style="flex:1"><div class="t">${p.name}</div><div class="s">${{ top: 'плечевое', pants: 'поясное · брюки', skirt: 'поясное · юбка', snood: 'аксессуар из ткани' }[p.gen]} · слой ${p.layer}</div></div><span class="muted">+</span></div>`).join('')}</div></div>
   <div class="sec"><h3>Слои и детали</h3><div class="tree" id="tree"></div></div>`;
   L.querySelectorAll('[data-add]').forEach((c) => (c.onclick = () => app.addGarment(c.dataset.add)));
   renderTree(app);
@@ -53,7 +53,7 @@ export function renderTree(app) {
   const mats = app.matsById();
   const gs = app.S.garments.slice().sort((a, b) => (b.layer || 0) - (a.layer || 0));
   el.innerHTML = gs.length ? gs.map((g) => `<div class="g"><div class="gh ${app.sel.g === g.id && !app.sel.p ? 'sel' : ''}" data-g="${g.id}"><button class="eye" data-vis="${g.id}" title="Показать/скрыть">${g.visible === false ? '○' : '●'}</button><span class="n">${esc(g.name)}</span><span class="chip">слой ${g.layer}</span><button class="eye" data-up="${g.id}" title="Слой выше">▲</button><button class="eye" data-dn="${g.id}" title="Слой ниже">▼</button></div>
-    ${g.pieces.map((p) => `<div class="pc ${app.sel.p === p.id ? 'sel' : ''}" data-p="${p.id}"><button class="eye" data-pv="${p.id}">${p.hidden ? '○' : '●'}</button><span class="sw" style="width:12px;height:12px;background:${mats[p.mat]?.color || '#555'}"></span><span style="flex:1">${esc(p.name)}</span></div>
+    ${g.pieces.map((p) => `<div class="pc ${app.sel.p === p.id ? 'sel' : ''}" data-p="${p.id}"><button class="eye" data-pv="${p.id}">${p.hidden ? '○' : '●'}</button><span class="sw" style="width:12px;height:12px;background:${mats[p.mat]?.color || '#555'}"></span><span style="flex:1">${esc(p.name)}</span>${p.inner ? '<span class="chip" title="Кроится, но в 3D не показывается: внутри изделия">внутр.</span>' : ''}</div>
       ${(p.overlays || []).map((o) => `<div class="sub ${app.sel.overlay === o.id ? 'sel' : ''}" data-ov="${p.id}:${o.id}">▣ ${esc(o.name)}</div>`).join('')}${(p.prints || []).map((r) => `<div class="sub ${app.sel.print === r.id ? 'sel' : ''}" data-pr="${p.id}:${r.id}">▤ принт</div>`).join('')}`).join('')}</div>`).join('') : '<p class="note">Пока пусто — добавьте основу выше.</p>';
   el.onclick = (e) => {
     const t = e.target;

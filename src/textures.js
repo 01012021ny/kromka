@@ -56,6 +56,7 @@ export function drawDecor(ctx, piece, matsById, images, onImg) {
     ctx.globalAlpha = s.alpha ?? 1;
     ctx.strokeStyle = s.color; ctx.lineWidth = s.w; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     if (s.mode === 'bleach') { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.25; }
+    if (s.mode === 'stitch') { ctx.setLineDash([0.32, 0.2]); ctx.lineCap = 'butt'; }
     ctx.beginPath(); ctx.moveTo(s.pts[0][0], s.pts[0][1]);
     for (let i = 1; i < s.pts.length; i++) ctx.lineTo(s.pts[i][0], s.pts[i][1]);
     ctx.stroke();
@@ -77,7 +78,7 @@ export function drawDecor(ctx, piece, matsById, images, onImg) {
   }
   // stitching & raw edges
   const mat = matsById[piece.mat] || Object.values(matsById)[0];
-  const thread = mat && mat.color < '#666666' ? 'rgba(255,255,255,0.28)' : 'rgba(0,0,0,0.3)';
+  const thread = mat?.cons === 'denim' ? 'rgba(201,140,60,0.9)' : mat && mat.color < '#666666' ? 'rgba(255,255,255,0.28)' : 'rgba(0,0,0,0.3)';
   for (let k = 0; k < piece.corners.length; k++) {
     const m = piece.meta[piece.corners[k].id] || {};
     const e = edgePts(piece, k);
@@ -90,6 +91,10 @@ export function drawDecor(ctx, piece, matsById, images, onImg) {
         for (let t = 0; t < 1; t += 0.12) { const px = a[0] + dx * t, py = a[1] + dy * t, L = 0.2 + r() * 0.5; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + nx * L, py + ny * L); ctx.stroke(); }
       }
       ctx.restore();
+    } else if (m.fold || (m.name === 'шов пояса' && piece.place?.kind === 'band')) {
+      stitchAlong(ctx, e, [0.25], thread); // притачной пояс: отстрочка по краям
+    } else if (TOPSTITCH[m.name]) {
+      stitchAlong(ctx, e, TOPSTITCH[m.name], thread);
     } else if (m.name === 'низ' || m.name === 'низ рукава' || m.name === 'борт' || m.name === 'пояс') {
       const d = Math.max(0.6, Math.min(2.5, (m.sa || 1) - 0.6));
       ctx.save(); ctx.strokeStyle = thread; ctx.lineWidth = 0.06; ctx.setLineDash([0.3, 0.2]);
@@ -112,6 +117,22 @@ export function drawDecor(ctx, piece, matsById, images, onImg) {
       ctx.restore();
     }
   }
+}
+
+// отделочные строчки по шву: отступы внутрь детали, см
+const TOPSTITCH = { 'вход в карман': [0.5, 1.1], 'кокетка': [0.6] };
+function stitchAlong(ctx, e, offs, thread) {
+  ctx.save(); ctx.strokeStyle = thread; ctx.lineWidth = 0.07; ctx.setLineDash([0.3, 0.2]);
+  for (const d of offs) {
+    ctx.beginPath();
+    for (let i = 0; i < e.length; i++) {
+      const a = e[Math.max(0, i - 1)], b = e[Math.min(e.length - 1, i + 1)], dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
+      const px = e[i][0] - (dy / l) * d, py = e[i][1] + (dx / l) * d;
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 export function path(ctx, pts) {

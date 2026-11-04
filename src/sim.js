@@ -149,6 +149,14 @@ export function placementCtx(garment, body, vis) {
       ctx.arms[L] = { R: Math.max(arm.rUA * 1.2 + gap, (w / (2 * Math.PI)) * 1.05), arm, gap, ex: rowExtents(ap) };
     }
   }
+  // притачной пояс: кольцо вокруг торса на своей высоте, x = 0 — середина полосы (середина спинки), концы сходятся спереди
+  for (const p of vis.filter((q) => q.place.kind === 'band')) {
+    const b = bbox(p.pts), r = body.ring((b.y0 + b.y1) / 2);
+    let A = r.a + gap, B = Math.max(r.bF, r.bB) + gap;
+    const k = b.w / ePerim(A, B);
+    A *= k; B *= k;
+    (ctx.band ||= {})[p.id] = { A, B, map: ellipseTable(A, B), xc: (b.x0 + b.x1) / 2 };
+  }
   ctx.neckR = body.m.neck / (2 * Math.PI) + gap;
   return ctx;
 }
@@ -189,6 +197,10 @@ export function placePoint(piece, x, y, ctx, body, out) {
     out[0] = a.J.x + a.d.x * s + R * (Math.cos(th) * a.o.x);
     out[1] = a.J.y + a.d.y * s + R * (Math.cos(th) * a.o.y);
     out[2] = a.J.z + a.d.z * s + R * Math.sin(th);
+  } else if (pl.kind === 'band' && ctx.band?.[piece.id]) {
+    const { A, B, map, xc } = ctx.band[piece.id];
+    const th = map(x - xc);
+    out[0] = -A * Math.sin(th); out[1] = y; out[2] = -B * Math.cos(th);
   } else if (pl.kind === 'neck') {
     const w = bbox(piece.pts).w;
     const R = Math.max(ctx.neckR + 3, w / (2 * Math.PI));
@@ -239,7 +251,8 @@ export class Sim {
     const stR = [], stC = [], stM = [], bdR = [], bdC = [];
     for (const g of garments) {
       if (g.visible === false) continue;
-      const vis = g.pieces.filter((p) => !p.hidden);
+      // внутренние детали (мешковина, откосок, шлёвки) кроятся, но не драпируются
+      const vis = g.pieces.filter((p) => !p.hidden && !p.inner);
       if (!vis.length) continue;
       const ctx = placementCtx(g, body, vis);
       const counts = {};
@@ -278,7 +291,7 @@ export class Sim {
       g._ctx = ctx;
       // boundary chains (edges not sewn) → closed openings (waist, hem, cuffs…) get hoop limits
       const sewnEdge = new Set();
-      for (const s of g.seams) { sewnEdge.add(s.a.p + ':' + s.a.e); sewnEdge.add(s.b.p + ':' + s.b.e); }
+      for (const s of g.seams) if (local[s.a.p] && local[s.b.p]) { sewnEdge.add(s.a.p + ':' + s.a.e); sewnEdge.add(s.b.p + ':' + s.b.e); }
       for (const p of vis) {
         const r = local[p.id];
         const ph = r.ph;
@@ -289,7 +302,7 @@ export class Sim {
           const gth = p.meta[c.id]?.gather ?? 1;
           let L = 0;
           for (let j = 1; j < ch.length; j++) L += Math.hypot(r.mesh.v2[2 * ch[j]] - r.mesh.v2[2 * ch[j - 1]], r.mesh.v2[2 * ch[j] + 1] - r.mesh.v2[2 * ch[j - 1] + 1]);
-          chainsAll.push({ v: ch.map((i) => r.off + i), L: L * gth, lim: clamp(ph.weft * 2.2, 0.02, 0.7), ring: RING_EDGES.has(p.meta[c.id]?.name || '') || gth < 0.999 });
+          chainsAll.push({ v: ch.map((i) => r.off + i), L: L * gth - (p.meta[c.id]?.lap || 0), lim: clamp(ph.weft * 2.2, 0.02, 0.7), ring: RING_EDGES.has(p.meta[c.id]?.name || '') || gth < 0.999 });
         }
       }
     }

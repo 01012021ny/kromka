@@ -1,22 +1,36 @@
 // @ts-check
 // Production exports: tiled A4 PDF at 1:1, DXF (AAMA/ASTM D6673-style blocks), HPGL/PLT, ZIP container, SVG with size nest
-import { cutOutline, edgePts, seamOf } from './patterns.js';
+import { cutOutline, edgePts, seamOf, overlayPiece } from './patterns.js';
 import { bbox, centroid, fmt, esc, polyLen } from './util.js';
 import { gradeGarment, sizesOf } from './grading.js';
 import { nestMaterial } from './layout.js';
 
 // ───────── collect what to export ─────────
-export function exportSets(app, { garments, sizes }) {
+// shrink: увеличить детали на усадку их ткани (для garment dye / стирки после пошива), отдельно по долевой и поперёк
+export function shrinkScale(p, mat) {
+  const sl = (mat?.shrink?.[0] || 0) / 100, sw = (mat?.shrink?.[1] || 0) / 100;
+  const kx = 1 / (1 - sw), ky = 1 / (1 - sl);
+  if (kx === 1 && ky === 1) return p;
+  const g = ((p.grain || 0) * Math.PI) / 180, c = Math.cos(g), s = Math.sin(g);
+  // масштаб в осях нити детали: поворот → масштаб → обратный поворот
+  const f = ([x, y]) => { const u = x * c - y * s, v = x * s + y * c; const U = u * kx, V = v * ky; return [U * c + V * s, -U * s + V * c]; };
+  return { ...p, pts: p.pts.map(f), overlays: (p.overlays || []).map((o) => ({ ...o, pts: o.pts.map(f) })) };
+}
+export function exportSets(app, { garments, sizes, shrink = false }) {
   const sets = [];
   const M = app.body.m;
+  const mats = shrink ? app.matsById() : null;
   for (const g of app.S.garments) {
     if (garments && !garments.includes(g.id)) continue;
     if (g.visible === false) continue;
     const base = g.grading?.base || 'M';
     for (const sz of sizesOf(g)) {
       if (sizes && !sizes.includes(sz)) continue;
-      const pieces = (sz === base ? g.pieces : gradeGarment(g, M, sz)).filter((p) => !p.hidden);
-      sets.push({ g, size: sz, pieces });
+      let pieces = (sz === base ? g.pieces : gradeGarment(g, M, sz)).filter((p) => !p.hidden);
+      // накладки (карманы, вставки) кроятся отдельно — добавляем их как детали; на основной детали остаются метками
+      pieces = pieces.flatMap((p) => [p, ...(p.overlays || []).filter((o) => !o.hidden).map((o) => overlayPiece(o, p))]);
+      if (shrink) pieces = pieces.map((p) => shrinkScale(p, mats[p.mat]));
+      sets.push({ g, size: sz, pieces, shrink });
     }
   }
   return sets;

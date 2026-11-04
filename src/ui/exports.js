@@ -6,6 +6,7 @@ import { esc, fmt, polyLen, bbox, centroid, deep, area } from '../util.js';
 import { SIZES, sizesOf } from '../grading.js';
 import { exportSets, pdfTiles, dxf, plt, zip, svgNest } from '../export.js';
 import { $ } from './controls.js';
+import { passportHTML } from './sample.js';
 
 export function doExport(app, kind) {
   const S = app.S;
@@ -15,6 +16,11 @@ export function doExport(app, kind) {
   if (kind === 'png') { const d = app.view3d.snapshotPNG(); fetch(d).then((r) => r.blob()).then((b) => app.save('kromka-3d.png', b)); }
   if (kind === 'svg') app.save('kromka-lekala.svg', exportSVG(app));
   if (kind === 'prod') openExport(app);
+  if (kind === 'passport') {
+    const g = app.sel.g ? app.garment(app.sel.g) : S.garments.length === 1 ? S.garments[0] : null;
+    if (!g) app.toast('Выберите изделие — паспорт делается для одного изделия', 'neg');
+    else app.save(`kromka-pasport-${g.name.replace(/[^\p{L}\p{N}]+/gu, '-').slice(0, 40)}.html`, passportHTML(app, g));
+  }
   if (kind === 'tech') app.save('kromka-tehkarta.html', exportTech(app));
   if (kind === 'new') { app.commit('Новый проект'); app.loadProject({ body: deep(BODY_DEFAULT), materials: [makeMaterial('jer180')], garments: [], accessories: [], images: {} }); }
 }
@@ -85,12 +91,13 @@ function openExport(app) {
   <label class="card"><input type="radio" name="fmt" value="svg"><div><div class="t">SVG · веер размеров</div><div class="s">все размеры наложены друг на друга — проверка градации, печать на плоттере</div></div></label></div>
   <h4>Изделия</h4><div class="row" style="flex-wrap:wrap">${gs.map((g) => `<label style="margin-right:10px"><input type="checkbox" data-xg="${g.id}" checked> ${esc(g.name)}</label>`).join('')}</div>
   <h4>Размеры</h4><div class="row" style="flex-wrap:wrap">${allSizes.map((x) => `<label style="margin-right:8px"><input type="checkbox" data-xs="${x}" ${bases.has(x) ? 'checked' : ''}> ${x}</label>`).join('')}</div>
+  <h4>Усадка</h4><label class="row" style="gap:8px"><input type="checkbox" id="xShr"> <span>Увеличить лекала на усадку ткани — для вещей, которые красят или стирают после пошива (garment dye). Сейчас: ${[...new Set(gs.flatMap((g) => g.pieces.map((p) => p.mat)))].map((id) => app.matsById()[id]).filter(Boolean).map((m) => esc(m.name) + ' ' + (m.shrink?.[0] ?? 0) + '/' + (m.shrink?.[1] ?? 0) + '%').join(', ')}</span></label>
   <div class="row" style="margin-top:14px;justify-content:flex-end"><span id="xInfo" class="muted" style="flex:1;font-size:12px"></span><button data-xclose>Отмена</button><button class="on" id="xGo">Сохранить</button></div></div>`;
   dlg.style.display = 'flex';
   dlg.onclick = (e) => { if (e.target === dlg || e.target.closest('[data-xclose]')) dlg.style.display = 'none'; };
   const info = () => {
     const garments = [...dlg.querySelectorAll('[data-xg]:checked')].map((i) => i.dataset.xg), sizes = [...dlg.querySelectorAll('[data-xs]:checked')].map((i) => i.dataset.xs);
-    const sets = exportSets(app, { garments, sizes });
+    const sets = exportSets(app, { garments, sizes, shrink: dlg.querySelector('#xShr').checked });
     const n = sets.reduce((a, s) => a + s.pieces.length, 0);
     dlg.querySelector('#xInfo').textContent = `${n} деталей · ${sets.length} комплект(ов)`;
     return { sets, sizes, garments };
@@ -101,7 +108,7 @@ function openExport(app) {
     const { sets } = info();
     if (!sets.length) { app.toast('Выберите хотя бы одно изделие и размер', 'neg'); return; }
     const fmtSel = dlg.querySelector('input[name=fmt]:checked').value;
-    const tag = [...new Set(sets.map((s) => s.size))].join('-');
+    const tag = [...new Set(sets.map((s) => s.size))].join('-') + (sets[0]?.shrink ? '-usadka' : '');
     if (fmtSel === 'pdf') {
       app.toast('Готовлю листы А4…');
       await new Promise((r) => setTimeout(r, 30));

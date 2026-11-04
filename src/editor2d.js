@@ -92,9 +92,13 @@ export class Editor2D {
       this.v.cx += before[0] - after[0]; this.v.cy += before[1] - after[1];
       this.dirty = true;
     }, { passive: false });
-    cv.addEventListener('pointerdown', (e) => this.down(e));
-    cv.addEventListener('pointermove', (e) => this.move(e));
-    cv.addEventListener('pointerup', (e) => this.up(e));
+    // iPad / сенсор: два пальца — масштаб и сдвиг; одиночное касание и Apple Pencil работают как мышь
+    this.touches = new Map(); this.pinch = null;
+    cv.style.touchAction = 'none';
+    cv.addEventListener('pointerdown', (e) => { if (!this.touchDown(e)) this.down(e); });
+    cv.addEventListener('pointermove', (e) => { if (!this.touchMove(e)) this.move(e); });
+    cv.addEventListener('pointerup', (e) => { if (!this.touchUp(e)) this.up(e); });
+    cv.addEventListener('pointercancel', (e) => { this.touchUp(e); this.abortGesture(); });
     cv.addEventListener('dblclick', (e) => { if (this.app.tool === 'cut' && this.tmp?.ctrl?.length >= 2) this.finishCut(); });
     window.addEventListener('keydown', (e) => {
       const t = /** @type {Element} */ (e.target);
@@ -102,6 +106,48 @@ export class Editor2D {
       if (e.key === 'Enter' && this.app.tool === 'cut') this.finishCut();
       if (e.key === 'Escape') { this.tmp = null; this.dirty = true; }
     });
+  }
+  touchDown(e) {
+    if (e.pointerType !== 'touch') return false;
+    const { sx, sy } = this.ev(e);
+    this.touches.set(e.pointerId, [sx, sy]);
+    if (this.touches.size === 2) {
+      this.abortGesture();
+      const [a, b] = [...this.touches.values()];
+      const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      this.pinch = { d0: Math.max(10, Math.hypot(a[0] - b[0], a[1] - b[1])), s0: this.v.s, w0: this.toW(mid[0], mid[1]) };
+      return true;
+    }
+    return this.touches.size > 2 || !!this.pinch;
+  }
+  touchMove(e) {
+    if (e.pointerType !== 'touch' || !this.touches.has(e.pointerId)) return false;
+    const { sx, sy } = this.ev(e);
+    this.touches.set(e.pointerId, [sx, sy]);
+    if (!this.pinch || this.touches.size < 2) return !!this.pinch;
+    const [a, b] = [...this.touches.values()];
+    const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+    const s = Math.max(0.4, Math.min(60, (this.pinch.s0 * d) / this.pinch.d0));
+    this.v.s = s;
+    this.v.cx = this.pinch.w0[0] - (mid[0] - this.W / 2) / s;
+    this.v.cy = this.pinch.w0[1] + (mid[1] - this.H / 2) / s;
+    this.dirty = true;
+    return true;
+  }
+  touchUp(e) {
+    if (e.pointerType !== 'touch') return false;
+    const was = !!this.pinch;
+    this.touches.delete(e.pointerId);
+    if (this.touches.size < 2) this.pinch = null;
+    return was || this.touches.size > 0;
+  }
+  // отменить начатое действие (второй палец превратил жест в масштаб)
+  abortGesture() {
+    const d = this.drag;
+    if (d && (d.type === 'corner' || d.type === 'bend')) { d.p.pts = d.base; this.app.undo(true); }
+    else if (d && d.type === 'movePiece' && d.committed) { d.p.view.x = d.vx; d.p.view.y = d.vy; this.app.undo(true); }
+    else if (d && d.type === 'print') { d.pr.x = d.x0; d.pr.y = d.y0; this.app.undo(true); }
+    this.drag = null; this.tmp = null; this.dirty = true;
   }
   ev(e) { const r = this.cv.getBoundingClientRect(); const sx = e.clientX - r.left, sy = e.clientY - r.top; return { sx, sy, w: this.toW(sx, sy) }; }
   down(e) {

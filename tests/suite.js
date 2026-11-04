@@ -2,12 +2,13 @@
 // cutting preserves area, nesting places every piece, DXF has a block per piece.
 import * as THREE from 'three';
 import { Body, BODY_DEFAULT } from '../src/body.js';
-import { GARMENT_PRESETS, GENERATORS, cutPiece, edgeLen, pieceArea, edgeK } from '../src/patterns.js';
+import { GARMENT_PRESETS, GENERATORS, cutPiece, edgeLen, pieceArea, edgeK, seamLengths, edgePts, cutOutline } from '../src/patterns.js';
 import { Sim, seamRev } from '../src/sim.js';
 import { makeMaterial } from '../src/materials.js';
 import { gradeGarment, defaultGrading } from '../src/grading.js';
 import { nestAll } from '../src/layout.js';
-import { dxf, plt, zip } from '../src/export.js';
+import { dxf, plt, zip, exportSets, shrinkScale } from '../src/export.js';
+import { patternSpec, sampleShrink, compoundShrink } from '../src/spec.js';
 import { bbox } from '../src/util.js';
 
 let pass = 0, fail = 0;
@@ -25,7 +26,7 @@ const make = (id) => {
 const drape = (gs, mats, steps = 300) => { const sim = new Sim(body); sim.build(gs, mats, 2.6); for (let f = 0; f < steps; f++) sim.step(1 / 60); return sim; };
 
 console.log('Физика: изделие держится на теле');
-const holdY = { tee: 140, long: 140, tank: 140, tunic: 140, coat: 140, over: 140, trou: 96, dropc: 95, skirt: 95, snood: 128 };
+const holdY = { tee: 140, long: 140, tank: 140, tunic: 140, coat: 140, over: 140, trou: 96, dropc: 95, skirt: 95, snood: 128, jeans: 98, flare: 97, stack: 97 };
 for (const id of Object.keys(holdY)) {
   const { g, mat } = make(id);
   const sim = drape([g], { [mat.id]: mat });
@@ -95,6 +96,74 @@ console.log('Экспорт');
   ok('PLT: начинается с IN', p.startsWith('IN;'));
   const z = zip([{ name: 'a.txt', data: 'hello' }]);
   ok('ZIP собран', z.size > 22);
+}
+
+console.log('Джинсы и силуэты брюк');
+{
+  const pants = GARMENT_PRESETS.filter((p) => p.gen === 'pants');
+  for (const pr of pants) {
+    const { g } = make(pr.id);
+    const worst = Math.max(...g.seams.filter((s) => !s.closure).map((s) => Math.abs(seamLengths(g, s).diff)));
+    ok(`${pr.id}: сшиваемые стороны равны по длине`, worst < 0.3, `макс. Δ ${worst.toFixed(2)} см`);
+  }
+  const { g, mat } = make('jeans');
+  const names = g.pieces.map((p) => p.name).join('|');
+  ok('джинсы: кокетка, бочок, пояс, мешковина, гульфик', ['Кокетка (лев.)', 'Бочок (прав.)', 'Пояс', 'Мешковина передняя (лев.)', 'Откосок', 'Гульфик', 'Шлёвки'].every((n) => names.includes(n)));
+  ok('джинсы: накладки — 2 задних и часовой карман', g.pieces.reduce((a, p) => a + p.overlays.length, 0) === 3);
+  const sim = drape([g], { [mat.id]: mat }, 360);
+  ok('джинсы: внутренние детали не драпируются', sim.pieces.length === g.pieces.filter((p) => !p.inner).length && sim.pieces.length === 9, `${sim.pieces.length} в 3D`);
+  const band = sim.pieces.find((r) => r.piece.place.kind === 'band');
+  let by = 0; for (let i = band.off; i < band.off + band.n; i++) by += sim.x[3 * i + 1]; by /= band.n;
+  ok('джинсы: пояс держится выше бёдер', by > body.m.y.hip + 6, `${by.toFixed(1)} при бёдрах ${body.m.y.hip.toFixed(1)}`);
+  let gap = 0; for (let c = 0; c < sim.sw.length; c += 2) { const a = 3 * sim.sw[c], b = 3 * sim.sw[c + 1]; gap = Math.max(gap, Math.hypot(sim.x[a] - sim.x[b], sim.x[a + 1] - sim.x[b + 1], sim.x[a + 2] - sim.x[b + 2])); }
+  ok('джинсы: швы в 3D сомкнуты', gap < 0.6, `макс. зазор ${gap.toFixed(2)} см`);
+  // клёш: низ шире колена, подгибка перпендикулярна боковому шву, сзади длиннее
+  const fl = make('flare').g, P = GARMENT_PRESETS.find((p) => p.id === 'flare').p;
+  const front = fl.pieces.find((p) => p.name === 'Передняя половинка (лев.)'), back = fl.pieces.find((p) => p.name === 'Задняя половинка (лев.)');
+  const kneeW = (pc) => { const y = body.m.y.knee + P.kneeY, xs = []; const pts = pc.pts; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; if ((a[1] > y) !== (b[1] > y)) xs.push(a[0] + ((y - a[1]) * (b[0] - a[0])) / (b[1] - a[1])); } return Math.max(...xs) - Math.min(...xs); };
+  const hemOf = (pc) => edgePts(pc, pc.corners.findIndex((c) => pc.meta[c.id].name === 'низ'));
+  const hf = hemOf(front), hb = hemOf(back);
+  const hemW = (h) => Math.abs(h[h.length - 1][0] - h[0][0]);
+  ok('клёш: низ шире колена', hemW(hf) > kneeW(front) + 8, `${hemW(hf).toFixed(1)} > ${kneeW(front).toFixed(1)}`);
+  const sideK = front.corners.findIndex((c) => front.meta[c.id].name === 'бок'), side = edgePts(front, sideK);
+  const hemEnd = hf[hf.length - 1][0] > hf[0][0] ? [hf[hf.length - 2], hf[hf.length - 1]] : [hf[1], hf[0]];
+  const sideStart = side[0][1] < side[side.length - 1][1] ? [side[0], side[3]] : [side[side.length - 1], side[side.length - 4]];
+  const v1 = [hemEnd[0][0] - hemEnd[1][0], hemEnd[0][1] - hemEnd[1][1]], v2 = [sideStart[1][0] - sideStart[0][0], sideStart[1][1] - sideStart[0][1]];
+  const ang = (Math.acos((v1[0] * v2[0] + v1[1] * v2[1]) / Math.hypot(...v1) / Math.hypot(...v2)) * 180) / Math.PI;
+  ok('клёш: угол низа и бокового шва ≈ 90°', Math.abs(ang - 90) < 12, `${ang.toFixed(0)}°`);
+  const minY = (h) => Math.min(...h.map((q) => q[1]));
+  ok('клёш: сзади низ длиннее переда (под каблук)', minY(hf) - minY(hb) > P.hemBack, `${(minY(hf) - minY(hb)).toFixed(1)} см`);
+  // табель мер джинсов: пояс считается по сгибу пояса, бок — вместе с поясом
+  const rows = Object.fromEntries(patternSpec(g, body.m).map((r) => [r.key, r.val]));
+  const bandP = g.pieces.find((p) => p.name === 'Пояс');
+  ok('джинсы: обхват пояса = верх пояса', Math.abs(rows.waist * 2 - edgeLen(bandP, bandP.corners.findIndex((c) => bandP.meta[c.id].fold))) < 0.3, `${rows.waist} см`);
+  ok('джинсы: длина по боку включает пояс', rows.outseam > rows.inseam + 20 && rows.outseam < 112, `${rows.outseam} см`);
+  // экспорт: накладки — отдельные детали, верх кармана с припуском на подгибку
+  const app = { body, S: { garments: [g] }, matsById: () => ({ [mat.id]: mat }) };
+  const set = exportSets(app, { garments: [g.id], sizes: ['M'] })[0];
+  const pk = set.pieces.find((p) => p.name.startsWith('Задний карман'));
+  ok('экспорт: накладки идут отдельными деталями', set.pieces.length === g.pieces.length + 3 && !!pk);
+  const pkH = bbox(pk.pts).h, cutH = bbox(cutOutline(pk)).h;
+  ok('экспорт: верх кармана с подгибкой 3 см', Math.abs(cutH - pkH - 4) < 0.3, `${pkH.toFixed(1)} → ${cutH.toFixed(1)}`);
+  const r = nestAll([g], { [mat.id]: mat }, { shrink: false, rotate: true, gap: 0.3 })[0];
+  ok('раскладка джинсов: всё на рулоне', !r.placed.some((p) => p.fail), `${r.placed.length} деталей, ${(r.util * 100).toFixed(0)}%`);
+  // градация джинсов
+  const xl = gradeGarment(g, body.m, 'XL');
+  const gw = Math.max(...g.seams.filter((s) => !s.closure).map((s) => Math.abs(seamLengths({ pieces: xl }, s).diff)));
+  ok('градация джинсов: швы XL сходятся', gw < 0.4, `${gw.toFixed(2)} см`);
+}
+
+console.log('Образец: усадка и калибровка');
+{
+  const sh = sampleShrink([{ axis: 'l', val: 100, sample: 97 }, { axis: 'l', val: 50, sample: 48.5 }, { axis: 'w', val: 40, sample: 39.2 }]);
+  ok('усадка по замерам образца', Math.abs(sh.l - 3) < 0.05 && Math.abs(sh.w - 2) < 0.05 && sh.n === 3, `Д ${sh.l?.toFixed(2)}% · Ш ${sh.w?.toFixed(2)}%`);
+  ok('усадка складывается как множители', Math.abs(compoundShrink(3, 2) - (100 - 97 * 0.98)) < 0.06, `3% + 2% → ${compoundShrink(3, 2)}%`);
+  const sq = { pts: [[0, 0], [10, 0], [10, 10], [0, 10]], overlays: [], grain: 0 };
+  const sc = shrinkScale(sq, { shrink: [5, 2] });
+  ok('лекало с припуском на усадку', Math.abs(bbox(sc.pts).h - 10 / 0.95) < 1e-6 && Math.abs(bbox(sc.pts).w - 10 / 0.98) < 1e-6, `${bbox(sc.pts).w.toFixed(3)} × ${bbox(sc.pts).h.toFixed(3)}`);
+  const sc90 = shrinkScale({ ...sq, grain: 90 }, { shrink: [5, 2] });
+  ok('усадка следует за долевой нитью детали', Math.abs(bbox(sc90.pts).w - 10 / 0.95) < 1e-6, `${bbox(sc90.pts).w.toFixed(3)}`);
+  ok('обхват манекена по высоте', Math.abs(body.girthAt(body.m.y.waist) - body.m.waist) < 2.5 && body.girthAt(body.m.y.hip) > body.girthAt(body.m.y.waist), `${body.girthAt(body.m.y.waist).toFixed(1)} / ${body.m.waist.toFixed(1)}`);
 }
 
 console.log(`\n${pass} пройдено, ${fail} провалено`);

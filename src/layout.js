@@ -1,6 +1,6 @@
 // @ts-check
 // Marker making: raster bottom-left nesting on a fabric roll, utilisation, offcuts and what they can become
-import { cutOutline, pieceArea } from './patterns.js';
+import { cutOutline, pieceArea, overlayPiece } from './patterns.js';
 import { area, bbox, clamp } from './util.js';
 import { CONS } from './materials.js';
 
@@ -215,24 +215,13 @@ export function collectItems(garments, mats, expand) {
         (byMat[p.mat] ||= []).push({ id: p.id + sfx, name: p.name + sfx, garment: g.name, poly: cutOutline(p), grain: p.grain || 0, area: pieceArea(p) });
         for (const o of p.overlays || []) {
           if (o.hidden) continue;
-          const poly = offsetSimple(o.pts, o.sa ?? 1);
+          const poly = cutOutline(overlayPiece(o, p));
           (byMat[o.mat || p.mat] ||= []).push({ id: o.id + sfx, name: (o.name || 'Накладка') + ' (' + p.name + ')' + sfx, garment: g.name, poly, grain: p.grain || 0, area: Math.abs(area(o.pts)) });
         }
       }
     }
   }
   return Object.entries(byMat).map(([mid, items]) => ({ mat: mats[mid], items })).filter((x) => x.mat);
-}
-
-function offsetSimple(pts, d) {
-  const ccw = area(pts) > 0 ? 1 : -1;
-  const n = pts.length;
-  return pts.map((p, i) => {
-    const a = pts[(i - 1 + n) % n], b = pts[(i + 1) % n];
-    let dx = b[0] - a[0], dy = b[1] - a[1];
-    const l = Math.hypot(dx, dy) || 1;
-    return [p[0] + (dy / l) * d * ccw, p[1] - (dx / l) * d * ccw];
-  });
 }
 
 export function nestAll(garments, mats, opt, expand) {

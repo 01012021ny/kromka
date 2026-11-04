@@ -1,7 +1,7 @@
 // @ts-check
 import * as THREE from 'three';
 import { Body, BODY_DEFAULT } from './body.js';
-import { GARMENT_PRESETS, GENERATORS, buildPiece, seamOf, findPiece } from './patterns.js';
+import { GARMENT_PRESETS, GENERATORS, GEN_DEFAULTS, buildPiece, seamOf, findPiece } from './patterns.js';
 import { Sim, seamRev } from './sim.js';
 import { SimProxy } from './simproxy.js';
 import { makeMaterial, PRESETS, physics } from './materials.js';
@@ -211,20 +211,32 @@ app.addGarment = (presetId) => {
   autosave();
   return g;
 };
+function fillParams(g) {
+  const d = GEN_DEFAULTS[g.gen];
+  if (d) for (const k in d) if (g.params[k] == null) g.params[k] = d[k];
+}
 function generate(g, matId) {
+  fillParams(g);
   const out = GENERATORS[g.gen](body.m, g.params);
   const oldMats = {};
   for (const p of g.pieces) oldMats[p.name] = p.mat;
   for (const p of out.pieces) {
     p.base = p.name;
-    p.mat = oldMats[p.name] || matId || g.baseMat;
+    // своя ткань детали из генератора (мешковина) — только если пользователь ещё не назначил другую
+    const own = p.matPreset ? app.ensureMaterial(p.matPreset).id : null;
+    p.mat = oldMats[p.name] || own || matId || g.baseMat;
     p.view.x += g.viewOff.x; p.view.y += g.viewOff.y;
-    delete p._edgeIds;
+    delete p._edgeIds; delete p._tags; delete p.matPreset;
   }
   g.pieces = out.pieces; g.seams = out.seams;
-  // arrange in a row on the table (y stays = body height)
-  let cur = g.viewOff.x;
-  for (const p of g.pieces) { const b = bbox(p.pts); p.view.x = cur - b.x0; cur += b.w + 9; }
+  g.stepLabels = out.stepLabels || null; g.stepNotes = out.stepNotes || null;
+  // раскладка на столе: ряд 1 — детали на теле (y = высота на теле); ряд 2 под ним — пояс и внутренние детали
+  let cur = g.viewOff.x, cur2 = g.viewOff.x;
+  for (const p of g.pieces) {
+    const b = bbox(p.pts);
+    if (p.inner || p.place.kind === 'band') { p.view.x = cur2 - b.x0; p.view.y = g.viewOff.y - 16 - b.y1; cur2 += b.w + 7; }
+    else { p.view.x = cur - b.x0; cur += b.w + 9; }
+  }
   for (const s of g.seams) s.rev = seamRev(g, s, body);
 }
 app.regenerate = (g, commit = true) => {
@@ -386,7 +398,7 @@ app.loadProject = (o) => {
   if (o.settings) Object.assign(S.settings, o.settings);
   let maxId = 0; JSON.stringify(o).replace(/"[a-z]+([0-9a-z]+)"/g, () => ''); setUidBase(maxId + 1000);
   for (const id in S.images) { const im = new Image(); im.onload = () => { app.imgRatio[id] = im.height / im.width; }; im.src = S.images[id]; }
-  for (const g of S.garments) { g.grading ||= defaultGrading('M'); for (const p of g.pieces) if (!p.base) p.base = p.name.split(' · ')[0]; }
+  for (const g of S.garments) { g.grading ||= defaultGrading('M'); fillParams(g); for (const p of g.pieces) if (!p.base) p.base = p.name.split(' · ')[0]; }
   view3d.texCache.clear();
   rebuildBody(); allTextures(); rebuildSim(true); scheduleLayout(); app.select({}); UI.renderLeft(app); editor.fit(); view3d.frameBody(body);
 };
@@ -426,7 +438,7 @@ function boot() {
     S.body = saved.body; S.materials = saved.materials; S.garments = saved.garments; S.accessories = saved.accessories || []; S.images = saved.images || {};
     if (saved.settings) Object.assign(S.settings, saved.settings);
     setUidBase(5000);
-    for (const g of S.garments) { g.grading ||= defaultGrading('M'); for (const p of g.pieces) if (!p.base) p.base = p.name.split(' · ')[0]; }
+    for (const g of S.garments) { g.grading ||= defaultGrading('M'); fillParams(g); for (const p of g.pieces) if (!p.base) p.base = p.name.split(' · ')[0]; }
     for (const id in S.images) { const im = new Image(); im.onload = () => { app.imgRatio[id] = im.height / im.width; app.updateTex(S.garments.flatMap((g) => g.pieces.filter((p) => p.prints.some((r) => r.img === id)).map((p) => p.id))); }; im.src = S.images[id]; }
     body.build(S.body);
     buildAccessories(); allTextures(); rebuildSim(true);
