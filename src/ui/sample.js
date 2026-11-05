@@ -7,6 +7,7 @@ import { nestAll } from '../layout.js';
 import { exportSets, svgNest } from '../export.js';
 import { esc, fmt, polyLen, area } from '../util.js';
 import { $ } from './controls.js';
+import { garmentCost } from '../cost.js';
 
 const rowsFor = (app, g) => specTable(g, app.body.m, app.sim, (y) => app.body.girthAt(y));
 
@@ -63,6 +64,32 @@ export function bindSpec(app, g, rerender) {
   };
 }
 
+const rub = (v) => Math.round(v).toLocaleString('ru') + ' ₽';
+const costOpt = (app) => ({ shrink: app.S.settings.shrinkComp, rotate: app.S.settings.rotate, gap: app.S.settings.gap, rate: app.S.settings.laborRate ?? 500 });
+function costTable(c) {
+  return `<table class="e"><tr><th>статья</th><th>кол-во</th><th>₽</th></tr>
+  ${c.fabric.map((f) => `<tr><td>${esc(f.name)}</td><td class="m">${fmt(f.qty, 2)} ${f.unit}</td><td class="m">${rub(f.rub)}</td></tr>`).join('')}
+  ${c.trims.map((t) => `<tr><td>${esc(t.name)}${t.note ? ' <span class="muted">· ' + esc(t.note) + '</span>' : ''}</td><td class="m">${t.n} шт.</td><td class="m">${rub(t.rub)}</td></tr>`).join('')}
+  <tr><td>Нитки</td><td class="m">${fmt(c.threadM, 0)} м</td><td class="m">${rub(c.threadRub)}</td></tr>
+  <tr><td>Работа (${fmt(c.rate, 0)} ₽/ч)</td><td class="m">${fmt(c.minutes / 60, 1)} ч</td><td class="m">${rub(c.laborRub)}</td></tr>
+  <tr><th>Итого</th><th></th><th class="m">${rub(c.total)}</th></tr></table>`;
+}
+/** Себестоимость в инспекторе: считается по раскрытию (раскладка изделия — не мгновенная) */
+export function costHTML(app, g) {
+  return `<details class="sec" id="costSec" ${app.ui?.costOpen ? 'open' : ''}><summary><h3 style="display:inline">Себестоимость образца</h3></summary>
+  <div class="row"><label>Ставка швеи, ₽/ч</label><input type="number" id="costRate" step="50" min="0" value="${app.S.settings.laborRate ?? 500}"></div>
+  <div id="costBody"><p class="note">Считаю…</p></div>
+  <p class="note">Ткань — по раскладке только этого изделия; фурнитура — с деталей и из конструкции; работа — по длине швов и краёв. Цены тканей меняются в инспекторе ткани.</p></details>`;
+}
+export function bindCost(app, g) {
+  const d = /** @type {HTMLDetailsElement|null} */ (document.getElementById('costSec'));
+  if (!d) return;
+  const fill = () => { const c = garmentCost(g, app.matsById(), costOpt(app)); const b = document.getElementById('costBody'); if (b) b.innerHTML = costTable(c); };
+  d.ontoggle = () => { (app.ui ||= {}).costOpen = d.open; if (d.open) setTimeout(fill, 0); };
+  if (d.open) setTimeout(fill, 0);
+  /** @type {HTMLInputElement} */ ($('#costRate')).onchange = (e) => { app.S.settings.laborRate = Math.max(0, +(/** @type {HTMLInputElement} */ (e.target)).value || 0); app.autosave(); if (d.open) fill(); };
+}
+
 /** Паспорт образца: всё, что нужно швее и для калибровки, в одном печатном документе */
 export function passportHTML(app, g) {
   const mats = app.matsById();
@@ -78,7 +105,7 @@ export function passportHTML(app, g) {
   const date = new Date().toLocaleDateString('ru');
   return `<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><title>Паспорт образца — ${esc(g.name)}</title>
 <style>body{font:13px/1.45 system-ui,sans-serif;max-width:980px;margin:28px auto;padding:0 20px;color:#111}h1{letter-spacing:.18em;font-size:20px;margin:0}h2{border-bottom:1.5px solid #000;padding-bottom:3px;margin-top:26px;font-size:15px;text-transform:uppercase;letter-spacing:.06em}
-table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:5px 6px;text-align:left;vertical-align:top}th{background:#f2f2f2;font-weight:600}td.n{font-family:ui-monospace,monospace;text-align:right}td.blank{min-width:70px}
+table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:5px 6px;text-align:left;vertical-align:top}th{background:#f2f2f2;font-weight:600}td.n,td.m,th.m{font-family:ui-monospace,monospace;text-align:right}td.blank{min-width:70px}
 .meta{color:#555}.sw{display:inline-block;width:11px;height:11px;border:1px solid #999;margin-right:6px;vertical-align:middle}ol li{margin:4px 0}svg{border:1px solid #ddd;margin-top:8px}@media print{h2{break-after:avoid}table{break-inside:auto}}</style></head><body>
 <h1>КРОМКА · ПАСПОРТ ОБРАЗЦА</h1>
 <p class="meta">${esc(g.name)} · размер ${base} (манекен: рост ${fmt(app.body.m.height, 0)}, грудь ${fmt(app.body.m.chest, 0)}, талия ${fmt(app.body.m.waist, 0)}, бёдра ${fmt(app.body.m.hips, 0)} см) · ${date}</p>
@@ -96,6 +123,8 @@ ${g.stepNotes ? '' : '<li><b>Обработка краёв:</b> по припу�
 <table><tr><th>Мерка</th><th>По лекалу</th><th>Допуск ±</th><th>3D на манекене</th><th>Образец до стирки</th><th>Образец после стирки</th><th>Δ</th></tr>
 ${rows.map((r) => `<tr><td>${esc(r.name)}</td><td class="n">${fmt(r.val)}</td><td class="n">${fmt(r.tol, 1)}</td><td class="n">${r.d3 == null ? '—' : fmt(r.d3)}</td><td class="blank"></td><td class="blank">${r.sample ?? ''}</td><td class="n">${r.delta == null ? '' : (r.delta > 0 ? '+' : '') + fmt(r.delta)}</td></tr>`).join('')}</table>
 <p class="meta">Все обхваты — полуобхваты (как меряют разложенную вещь). Впишите замеры «после стирки» в КРОМКЕ (Изделие → Образец и замеры) и нажмите «Учесть усадку в ткани»: следующие раскладки и лекала «с припуском на усадку» учтут реальное поведение ткани.</p>
-<h2>5. Схема деталей (масштаб уменьшен; для кроя — PDF А4 1:1)</h2>${svg}
+<h2>5. Фурнитура и себестоимость</h2>
+${(() => { const c = garmentCost(g, mats, costOpt(app)); return `<p class="meta">Купить к пошиву: ${c.trims.length ? c.trims.map((t) => `${esc(t.name.toLowerCase())} × ${t.n}${t.note ? ' (' + esc(t.note) + ')' : ''}`).join('; ') : 'фурнитура не нужна'}; нитки ≈ ${fmt(c.threadM, 0)} м.</p>${costTable(c)}`; })()}
+<h2>6. Схема деталей (масштаб уменьшен; для кроя — PDF А4 1:1)</h2>${svg}
 </body></html>`;
 }

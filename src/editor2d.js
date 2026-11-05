@@ -1,7 +1,7 @@
 // @ts-check
 // 2D pattern editor: pan/zoom, select/drag corners & bends, cut (curve / freehand), overlays (layers), brush, prints, hardware, seams
 import { dist, polyDist, inside, centroid, bbox, catmull, simplify, fmt, uid, area, polyLen } from './util.js';
-import { edgePts, edgeIdx, cutOutline, deformCorner, deformEdge, mirrorCorner, mirrorEdgeK, splitEdge, removeCorner, cutPiece, seamOf, seamLengths, edgeK, edgeMeta } from './patterns.js';
+import { edgePts, edgeIdx, cutOutline, deformCorner, deformEdge, mirrorCorner, mirrorEdgeK, splitEdge, removeCorner, cutPiece, seamOf, seamLengths, seamTol, edgeK, edgeMeta } from './patterns.js';
 import { path } from './textures.js';
 import { sizesOf, SIZES } from './grading.js';
 
@@ -418,7 +418,7 @@ export class Editor2D {
             const letter = String.fromCharCode(65 + (seamIdx.get(sm) % 26)) + (seamIdx.get(sm) >= 26 ? Math.floor(seamIdx.get(sm) / 26) : '');
             if (sl) {
               const diff = Math.abs(sl.diff);
-              const ok = diff < 0.35 || (sm.name || '').includes('Втачивание') && diff < 2.2;
+              const ok = diff < seamTol(sm);
               txt = `${letter} ${fmt(L)} ${ok ? '✓' : 'Δ' + (sl.diff > 0 ? '+' : '') + fmt(sm.a.p === p.id && sm.a.e === cid ? sl.diff : -sl.diff)}`;
               col = ok ? POS : NEG;
             }

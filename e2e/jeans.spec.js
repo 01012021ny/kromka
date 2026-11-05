@@ -29,3 +29,31 @@ test('джинсы: основа из каталога → 3D без внутр�
   for (const s of ['Мешковина передняя (лев.)', 'Гульфик', 'Задний карман (Задняя половинка (прав.))', 'Часовой карман', 'Пояс и шлёвки', 'J-строчку', 'сгиб, обтачка'])
     expect(html, s).toContain(s);
 });
+
+test('джинсы: хватит ли моего отреза, себестоимость, сгиб у колена', async ({ page }) => {
+  await openApp(page, '#local');
+  await page.evaluate(() => { const a = window.__app; for (const g of [...a.S.garments]) a.removeGarment(g); });
+  await page.click('[data-add=jeans]');
+  const gid = await page.evaluate(() => window.__app.S.garments[0].id);
+
+  // сгиб у колена из инспектора: появляются нижние части переда
+  await page.locator('#gp_artKnee_n').fill('2.5');
+  await page.locator('#gp_artKnee_n').dispatchEvent('change');
+  await expect.poll(() => page.evaluate((id) => window.__app.garment(id).pieces.filter((p) => p.name.startsWith('Перед ниже колена')).length, gid)).toBe(2);
+
+  // себестоимость раскрывается и считает итог
+  await page.click('#costSec summary');
+  await expect(page.locator('#costBody')).toContainText('Итого');
+  await expect(page.locator('#costBody')).toContainText('Молния');
+
+  // раскладка: отрез 0,5 м — не хватает (красное), 3 м — хватает (зелёное)
+  await page.click('nav button[data-tab=layout]');
+  await expect.poll(() => page.evaluate(() => (window.__app.layout || []).length)).toBeGreaterThan(0);
+  const denim = await page.evaluate(() => window.__app.layout.find((r) => r.mat.presetId === 'den12').mat.id);
+  const stock = page.locator(`[data-stock="${denim}"]`);
+  await stock.fill('0.5'); await stock.dispatchEvent('change');
+  await expect(page.locator('#left .note.neg', { hasText: 'не хватает' })).toBeVisible();
+  await expect(page.locator('#waste')).toContainText('отреза не хватает');
+  await page.locator(`[data-stock="${denim}"]`).fill('3'); await page.locator(`[data-stock="${denim}"]`).dispatchEvent('change');
+  await expect(page.locator('#left .note.pos', { hasText: 'хватает' })).toBeVisible();
+});

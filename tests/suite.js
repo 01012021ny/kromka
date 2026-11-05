@@ -9,6 +9,7 @@ import { gradeGarment, defaultGrading } from '../src/grading.js';
 import { nestAll } from '../src/layout.js';
 import { dxf, plt, zip, exportSets, shrinkScale } from '../src/export.js';
 import { patternSpec, sampleShrink, compoundShrink } from '../src/spec.js';
+import { garmentCost, stockFit } from '../src/cost.js';
 import { bbox } from '../src/util.js';
 
 let pass = 0, fail = 0;
@@ -103,7 +104,7 @@ console.log('Джинсы и силуэты брюк');
   const pants = GARMENT_PRESETS.filter((p) => p.gen === 'pants');
   for (const pr of pants) {
     const { g } = make(pr.id);
-    const worst = Math.max(...g.seams.filter((s) => !s.closure).map((s) => Math.abs(seamLengths(g, s).diff)));
+    const worst = Math.max(...g.seams.filter((s) => !s.closure && !s.ease).map((s) => Math.abs(seamLengths(g, s).diff)));
     ok(`${pr.id}: сшиваемые стороны равны по длине`, worst < 0.3, `макс. Δ ${worst.toFixed(2)} см`);
   }
   const { g, mat } = make('jeans');
@@ -151,6 +152,40 @@ console.log('Джинсы и силуэты брюк');
   const xl = gradeGarment(g, body.m, 'XL');
   const gw = Math.max(...g.seams.filter((s) => !s.closure).map((s) => Math.abs(seamLengths({ pieces: xl }, s).diff)));
   ok('градация джинсов: швы XL сходятся', gw < 0.4, `${gw.toFixed(2)} см`);
+}
+
+console.log('Сгиб у колена, болт-фронт, себестоимость');
+{
+  const makeP = (id, extra) => {
+    const pr = GARMENT_PRESETS.find((p) => p.id === id), params = { ...pr.p, ...extra }, mat = makeMaterial(pr.mat);
+    const out = GENERATORS.pants(body.m, params);
+    const g = { id: id + 'x', name: pr.name, gen: 'pants', params, pieces: out.pieces, seams: out.seams, layer: 0, trims: out.trims, grading: defaultGrading('M') };
+    for (const p of g.pieces) { p.mat = mat.id; p.base = p.name; }
+    for (const s of g.seams) s.rev = seamRev(g, s, body);
+    return { g, mat };
+  };
+  for (const id of ['trou', 'jeans']) {
+    const { g, mat } = makeP(id, { artKnee: 2.5 });
+    const low = g.pieces.filter((p) => p.name.startsWith('Перед ниже колена'));
+    const knee = g.seams.filter((s) => s.ease);
+    ok(`${id}: сгиб у колена — нижняя часть переда и шов с посадкой`, low.length === 2 && knee.length === 2);
+    const kd = knee.map((s) => -seamLengths(g, s).diff);
+    ok(`${id}: посадка у колена 0,3–2 см`, kd.every((d) => d > 0.3 && d < 2), kd.map((d) => d.toFixed(2)).join(' / '));
+    const worst = Math.max(...g.seams.filter((s) => !s.ease && !s.closure).map((s) => Math.abs(seamLengths(g, s).diff)));
+    ok(`${id}: остальные швы со сгибом сходятся`, worst < 0.3, `${worst.toFixed(2)} см`);
+    const sim = drape([g], { [mat.id]: mat }, 300);
+    let nan = 0, ymax = -1e9; for (let i = 0; i < sim.N; i++) { const y = sim.x[3 * i + 1]; if (!isFinite(y)) nan++; ymax = Math.max(ymax, y); }
+    ok(`${id}: со сгибом у колена держится, без NaN`, nan === 0 && ymax > 97, `верх ${ymax.toFixed(0)}`);
+  }
+  const zip = makeP('jeans', {}).g, bf = makeP('jeans', { buttonFly: 1 }).g;
+  ok('джинсы: молния в фурнитуре, болт-фронт — пуговицы', zip.trims[0].type === 'zipper' && bf.trims[0].type === 'button' && bf.trims[0].n >= 3 && bf.pieces.some((p) => p.name.startsWith('Откосок с петлями')));
+  const { g, mat } = makeP('jeans', {});
+  mat.price = 1000;
+  const c = garmentCost(g, { [mat.id]: mat }, { rate: 600 });
+  const rivets = c.trims.find((t) => t.type === 'rivet')?.n || 0;
+  ok('себестоимость: ткань, фурнитура, нитки, работа', c.fabricRub > 500 && rivets >= 6 && c.trims.some((t) => t.type === 'zipper') && c.minutes > 60 && c.minutes < 400 && Math.abs(c.total - (c.fabricRub + c.trimsRub + c.threadRub + c.laborRub)) < 1e-6, `${Math.round(c.total)} ₽ · ${(c.minutes / 60).toFixed(1)} ч · ткань ${c.fabric[0].qty.toFixed(2)} м`);
+  const fit = stockFit({ mat: { stock: 1.2 }, length: 150, placed: [] }), fit2 = stockFit({ mat: { stock: 2 }, length: 150, placed: [] });
+  ok('отрез: хватит / не хватит', !fit.ok && Math.abs(fit.left + 0.3) < 1e-9 && fit2.ok && stockFit({ mat: {}, length: 150, placed: [] }) === null);
 }
 
 console.log('Образец: усадка и калибровка');

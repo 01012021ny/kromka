@@ -19,7 +19,7 @@ const S = {
   garments: [],
   accessories: [],
   images: {},
-  settings: { showSA: true, showLen: true, quality: 2.6, shrinkComp: true, rotate: true, gap: 0.3 },
+  settings: { showSA: true, showLen: true, quality: 2.6, shrinkComp: true, rotate: true, gap: 0.3, laborRate: 500 },
 };
 const app = {
   S, sel: {}, tool: 'select', tab: 'garments', mode2d: 'pattern',
@@ -229,7 +229,7 @@ function generate(g, matId) {
     delete p._edgeIds; delete p._tags; delete p.matPreset;
   }
   g.pieces = out.pieces; g.seams = out.seams;
-  g.stepLabels = out.stepLabels || null; g.stepNotes = out.stepNotes || null;
+  g.stepLabels = out.stepLabels || null; g.stepNotes = out.stepNotes || null; g.trims = out.trims || null;
   // раскладка на столе: ряд 1 — детали на теле (y = высота на теле); ряд 2 под ним — пояс и внутренние детали
   let cur = g.viewOff.x, cur2 = g.viewOff.x;
   for (const p of g.pieces) {

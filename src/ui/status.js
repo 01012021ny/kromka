@@ -1,6 +1,7 @@
 // Footer readouts: simulation and fabric use
 import { fmt } from '../util.js';
 import { $ } from './controls.js';
+import { stockFit } from '../cost.js';
 
 export function renderStats(app, fps) {
   const s = app.sim;
@@ -14,5 +15,6 @@ export function renderWaste(app) {
   const used = res.reduce((a, r) => a + r.usedGrams, 0), waste = res.reduce((a, r) => a + r.wasteGrams, 0);
   const util = used / Math.max(1, used + waste);
   const len = res.filter((r) => !r.isHide).reduce((a, r) => a + r.length, 0);
-  $('#waste').innerHTML = `ткань ${fmt(len / 100, 2)} м · использование <span class="${util >= 0.85 ? 'pos' : util < 0.72 ? 'neg' : ''}">${fmt(util * 100, 0)}%</span> · в отходы <span class="neg">${fmt(waste, 0)} г</span>`;
+  const short = res.map(stockFit).filter((f) => f && !f.ok);
+  $('#waste').innerHTML = `ткань ${fmt(len / 100, 2)} м · использование <span class="${util >= 0.85 ? 'pos' : util < 0.72 ? 'neg' : ''}">${fmt(util * 100, 0)}%</span> · в отходы <span class="neg">${fmt(waste, 0)} г</span>${short.length ? ` · <span class="neg">отреза не хватает: ${short.map((f) => fmt(-f.left, 2) + ' м').join(', ')}</span>` : ''}`;
 }

@@ -5,6 +5,7 @@ import { MEAS_LABELS } from '../body.js';
 import { ACC_TYPES, makeAcc } from '../accessories.js';
 import { esc, fmt } from '../util.js';
 import { collectItems, nestMaterial } from '../layout.js';
+import { stockFit } from '../cost.js';
 import { $, ctl, bindCtl } from './controls.js';
 import { TOOLS, setTool, setMode } from './toolbar.js';
 
@@ -152,6 +153,14 @@ function leftAcc(app, L) {
   }));
 }
 
+// вердикт по отрезу: зелёный — хватает (и сколько останется), красный — сколько докупить
+export function stockLine(f) {
+  if (!f) return '';
+  return f.ok
+    ? `<p class="note pos">Отреза ${fmt(f.stock, 2)} м хватает: раскладка ${fmt(f.need, 2)} м, останется ${fmt(f.left, 2)} м</p>`
+    : `<p class="note neg">Отреза ${fmt(f.stock, 2)} м не хватает: нужно ${fmt(f.need, 2)} м, докупить ${fmt(-f.left, 2)} м — или сузьте/укоротите детали, уменьшите зазор, разрешите поворот 180°</p>`;
+}
+
 function leftLayout(app, L) {
   const S = app.S, res = app.layout || [];
   const tot = res.reduce((a, r) => ({ len: a.len + (r.isHide ? 0 : r.length), waste: a.waste + r.wasteGrams, used: a.used + r.usedGrams, cost: a.cost + (r.cost || 0) }), { len: 0, waste: 0, used: 0, cost: 0 });
@@ -165,12 +174,14 @@ function leftLayout(app, L) {
   <button id="lShow" style="width:100%;margin-top:6px">Показать раскладку на столе</button></div>
   ${res.map((r) => `<div class="sec"><h3><span><span class="sw" style="display:inline-block;width:10px;height:10px;background:${r.mat.color};vertical-align:middle"></span> ${esc(r.mat.name)}</span><span class="${r.util >= 0.85 ? 'pos' : r.util < 0.72 ? 'neg' : ''}">${fmt(r.util * 100, 0)}%</span></h3>
     <div class="row"><label>Ширина рулона, см</label><input type="number" data-w="${r.mat.id}" value="${r.mat.width}"><button class="sm" data-wopt="${r.mat.id}" title="Перебрать ширины рулона и показать расход">подобрать</button></div><div id="wopt_${r.mat.id}"></div>
+    ${r.isHide ? '' : `<div class="row"><label title="Длина куска ткани, который у вас есть. 0 — рулон без ограничения">Мой отрез, м</label><input type="number" step="0.05" min="0" data-stock="${r.mat.id}" value="${r.mat.stock || 0}"></div>${stockLine(stockFit(r))}`}
     <dl class="kv"><dt>${r.isHide ? 'Площадь кожи' : 'Длина отреза'}</dt><dd>${r.isHide ? fmt(r.ft2, 1) + ' фт² → ' + r.hides + ' шк. (~' + r.hideFt2 + ' фт²)' : fmt(r.length / 100, 2) + ' м'}</dd><dt>Деталей</dt><dd>${r.placed.length}${r.placed.some((x) => x.fail) ? ' <span class="neg">· не влезли: ' + r.placed.filter((x) => x.fail).length + '</span>' : ''}</dd><dt>Усадка, компенс.</dt><dd>${r.mat.shrink ? r.mat.shrink[0] + '% / ' + r.mat.shrink[1] + '%' : '—'}</dd><dt>Ткань в изделии</dt><dd>${fmt(r.usedGrams, 0)} г</dd><dt>Отходы</dt><dd class="neg">${fmt(r.wasteGrams, 0)} г</dd></dl>
     ${r.offcuts.slice(0, 4).map((o) => `<div class="offc">остаток <b>${fmt(o.rect.w, 0)}×${fmt(o.rect.h, 0)} см</b> (${fmt(o.area / 100, 1)} дм²) → ${o.ideas.join('; ')}</div>`).join('')}</div>`).join('')}`;
   $('#lShr').onclick = () => { S.settings.shrinkComp = !S.settings.shrinkComp; app.scheduleLayout(); renderLeft(app); };
   $('#lRot').onclick = () => { S.settings.rotate = !S.settings.rotate; app.scheduleLayout(); renderLeft(app); };
   $('#lGap').onchange = (e) => { S.settings.gap = Math.max(0, +e.target.value); app.scheduleLayout(); };
   $('#lShow').onclick = () => setMode(app, 'layout');
+  L.querySelectorAll('[data-stock]').forEach((i) => (i.onchange = () => { const m = S.materials.find((x) => x.id === i.dataset.stock); m.stock = Math.max(0, +i.value || 0); app.autosave(); app.scheduleLayout(); }));
   L.querySelectorAll('[data-w]').forEach((i) => (i.onchange = () => { const m = S.materials.find((x) => x.id === i.dataset.w); m.width = Math.max(20, +i.value); app.scheduleLayout(); }));
   L.querySelectorAll('[data-wopt]').forEach((b) => (b.onclick = () => {
     const m = S.materials.find((x) => x.id === b.dataset.wopt);

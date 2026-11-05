@@ -1,12 +1,12 @@
 // Right inspector: garment, piece, material, accessory
-import { GEN_PARAMS, edgePts, seamOf, seamLengths, sewingSteps, duplicatePiece, cutOutline, findPiece } from '../patterns.js';
+import { GEN_PARAMS, edgePts, seamOf, seamLengths, seamTol, sewingSteps, duplicatePiece, cutOutline, findPiece } from '../patterns.js';
 import { FIBERS, CONS, FINISHES, describe, defaultShrink, physics } from '../materials.js';
 import { ACC_TYPES, METALS } from '../accessories.js';
 import { esc, fmt, polyLen, bbox, area } from '../util.js';
 import { SIZES, STEP_LABELS, defaultGrading, sizesOf } from '../grading.js';
 import { $, ctl, bindCtl } from './controls.js';
 import { renderLeft, renderTree } from './left.js';
-import { specHTML, bindSpec } from './sample.js';
+import { specHTML, bindSpec, costHTML, bindCost } from './sample.js';
 
 export function renderRight(app) {
   const R = $('#right');
@@ -28,10 +28,11 @@ function inspGarment(app, R, g) {
   <p class="note">Параметры перестраивают лекала от мерок манекена (ручные правки этого изделия сбросятся; отмена — Ctrl+Z).</p>
   ${P.map(([k, n, mi, ma, st]) => ctl('gp_' + k, n, g.params[k] ?? 0, mi, ma, st)).join('')}</div>
   ${specHTML(app, g)}
+  ${costHTML(app, g)}
   ${gradingHTML(g)}
   <div class="sec"><h3>Ткань всего изделия</h3><select id="gMat" style="width:100%">${app.S.materials.map((m) => `<option value="${m.id}" ${g.baseMat === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select><button class="sm" id="gMatAll" style="margin-top:6px">Назначить всем деталям</button></div>
   <div class="sec"><h3>Новая деталь</h3><div class="row"><input type="number" id="nw" value="20"> × <input type="number" id="nh" value="30"> см <select id="npl"><option value="front">на перед</option><option value="back">на спинку</option><option value="none">отдельно</option></select></div><button class="sm" id="nAdd">+ Прямоугольник</button><p class="note">Для геометрических zero-waste конструкций: прямоугольник шириной в рулон, клинья, ластовицы.</p></div>
-  <div class="sec"><h3>Порядок пошива</h3><ol class="steps-list">${steps.map((s) => `<li><b>${s.title}</b>${s.note ? `<span class="nt">${esc(s.note)}</span>` : ''}${s.seams.length ? '<br>' : ''}${s.seams.map((x) => { const sl = seamLengths(g, x); const ok = sl && Math.abs(sl.diff) < 0.35; return `<span class="${sl ? (ok || (x.name || '').includes('Втачивание') && Math.abs(sl.diff) < 2.2 ? 'pos' : 'neg') : ''}">${esc(x.name)}${sl ? ' · ' + fmt(sl.la) + (ok ? '' : ' / ' + fmt(sl.lb)) + ' см' : ''}</span>`; }).join('<br>')}</li>`).join('')}${g.stepNotes ? '' : '<li><b>Обработать</b> горловину, низ, края по припускам (см. стороны деталей)</li>'}</ol></div>`;
+  <div class="sec"><h3>Порядок пошива</h3><ol class="steps-list">${steps.map((s) => `<li><b>${s.title}</b>${s.note ? `<span class="nt">${esc(s.note)}</span>` : ''}${s.seams.length ? '<br>' : ''}${s.seams.map((x) => { const sl = seamLengths(g, x); const exact = sl && Math.abs(sl.diff) < 0.35, ok = sl && Math.abs(sl.diff) < seamTol(x); return `<span class="${sl ? (ok ? 'pos' : 'neg') : ''}">${esc(x.name)}${sl ? ' · ' + fmt(sl.la) + (exact ? '' : ' / ' + fmt(sl.lb)) + ' см' : ''}${x.ease && !exact ? ' (посадка)' : ''}</span>`; }).join('<br>')}</li>`).join('')}${g.stepNotes ? '' : '<li><b>Обработать</b> горловину, низ, края по припускам (см. стороны деталей)</li>'}</ol></div>`;
   for (const [k, , , , st] of P) bindCtl('gp_' + k, (v, fin) => { g.params[k] = v; if (fin) app.regenerate(g); else app.regenDebounced(g); }, '', st < 1 ? 1 : 0);
   $('#gName').onchange = (e) => { g.name = e.target.value; renderTree(app); };
   $('#gDel').onclick = () => app.removeGarment(g);
@@ -39,6 +40,7 @@ function inspGarment(app, R, g) {
   $('#gMatAll').onclick = () => { app.commit('Ткань изделия'); for (const p of g.pieces) p.mat = g.baseMat; app.changed({ allTex: true, geo: true, layout: true }); };
   $('#nAdd').onclick = () => app.addRectPiece(g, +$('#nw').value, +$('#nh').value, $('#npl').value);
   bindGrading(app, g);
+  bindCost(app, g);
   bindSpec(app, g, () => { const R2 = $('#right'), st = R2.scrollTop; renderRight(app); R2.scrollTop = st; });
 }
 function gradingHTML(g) {
@@ -78,7 +80,7 @@ function inspPiece(app, R, p) {
       const other = sm.a.p === p.id && sm.a.e === c.id ? sm.b : sm.a;
       const op = g.pieces.find((x) => x.id === other.p);
       const d = sl ? (sm.a.p === p.id && sm.a.e === c.id ? sl.diff : -sl.diff) : 0;
-      const ok = Math.abs(d) < 0.35 || ((sm.name || '').includes('Втачивание') && Math.abs(d) < 2.2);
+      const ok = Math.abs(d) < seamTol(sm);
       badge = `<span title="${esc(sm.name)} → ${esc(op?.name || '')}" class="${ok ? 'pos' : 'neg'}">${ok ? '✓' : 'Δ' + (d > 0 ? '+' : '') + fmt(d)}</span>`;
     }
     return `<tr class="${sel.edge === c.id ? 'sel' : ''}" data-edge="${c.id}"><td>${esc(m.name || 'сторона ' + (k + 1))}</td><td class="m">${fmt(L)}</td><td><input type="number" step="0.1" min="0" data-sa="${c.id}" value="${m.sa ?? 1}" ${m.raw ? 'disabled' : ''}></td><td><input type="checkbox" data-raw="${c.id}" ${m.raw ? 'checked' : ''} title="Сырой край"></td><td><input type="number" step="0.05" min="0.3" max="1" data-gat="${c.id}" value="${m.gather ?? 1}" title="Резинка: 1 — нет, 0.7 — стянуть до 70%"></td><td>${badge}</td></tr>`;
@@ -136,7 +138,8 @@ function inspMat(app, R, m) {
   ${m.thick || CONS[m.cons]?.hide ? `<div class="row"><label>Толщина кожи, мм</label><input type="number" step="0.1" id="mThk" value="${m.thick || 1}"></div>` : ''}
   <div class="row"><label>Ширина, см</label><input type="number" id="mWid" value="${m.width}"></div>
   <div class="row"><label>Обработка</label><select id="mFin" style="flex:1">${Object.entries(FINISHES).map(([k, n]) => `<option value="${k}" ${k === m.finish ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
-  <div class="row"><label>Цена, ₽/${CONS[m.cons]?.hide ? 'фут²' : 'м'}</label><input type="number" id="mPr" value="${m.price}"></div></div>
+  <div class="row"><label>Цена, ₽/${CONS[m.cons]?.hide ? 'фут²' : 'м'}</label><input type="number" id="mPr" value="${m.price}"></div>
+  ${CONS[m.cons]?.hide ? '' : `<div class="row"><label title="Длина куска, который у вас есть. 0 — рулон без ограничения">Мой отрез, м</label><input type="number" step="0.05" min="0" id="mStock" value="${m.stock || 0}"></div>`}</div>
   <div class="sec"><h3>Состав <span class="${tot === 100 ? 'pos' : 'neg'}">${tot}%</span></h3>
   ${m.comp.map(([f, p], i) => `<div class="comp"><select data-cf="${i}">${fiberOpts(f)}</select><input type="number" data-cp="${i}" value="${p}" min="0" max="100"><button class="sm ghost" data-cx="${i}">×</button></div>`).join('')}
   <button class="sm" id="cAdd">+ волокно</button><p class="note">Напр.: хлопок 90% + эластан 10% — эластан резко увеличивает растяжимость по утку и усадку.</p></div>
@@ -155,6 +158,7 @@ function inspMat(app, R, m) {
   $('#mWid').onchange = (e) => { m.width = Math.max(20, +e.target.value); app.scheduleLayout(); };
   $('#mFin').onchange = (e) => ch('Обработка', () => { m.finish = e.target.value; m.shrink = defaultShrink(m); });
   $('#mPr').onchange = (e) => { m.price = +e.target.value; app.scheduleLayout(); };
+  if ($('#mStock')) $('#mStock').onchange = (e) => { m.stock = Math.max(0, +e.target.value || 0); app.autosave(); app.scheduleLayout(); };
   R.querySelectorAll('[data-cf]').forEach((s) => (s.onchange = () => ch('Состав', () => { m.comp[+s.dataset.cf][0] = s.value; })));
   R.querySelectorAll('[data-cp]').forEach((s) => (s.onchange = () => ch('Состав', () => { m.comp[+s.dataset.cp][1] = Math.max(0, Math.min(100, +s.value)); })));
   R.querySelectorAll('[data-cx]').forEach((s) => (s.onclick = () => ch('Состав', () => { if (m.comp.length > 1) m.comp.splice(+s.dataset.cx, 1); })));

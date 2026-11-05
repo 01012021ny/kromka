@@ -2,12 +2,13 @@
 import { fmt, bbox, centroid } from '../util.js';
 import { POS, NEG } from '../editor2d.js';
 import { $ } from './controls.js';
+import { stockFit } from '../cost.js';
 
 export function drawLayout(app) {
   const wrap = $('#layoutView'), cv = $('#cLay');
   const res = app.layout || [];
   const W = wrap.clientWidth - 24;
-  const maxLen = Math.max(100, ...res.map((r) => r.length));
+  const maxLen = Math.max(100, ...res.map((r) => Math.max(r.length, (stockFit(r)?.stock || 0) * 100)));
   const sc = Math.min(4, (W - 40) / maxLen);
   let H = 20;
   for (const r of res) H += r.W * sc + 70;
@@ -45,6 +46,17 @@ export function drawLayout(app) {
     }
     // selvedge + ruler
     c.strokeStyle = '#6d6961'; c.strokeRect(0, 0, r.length * sc, r.W * sc);
+    // граница отреза: зелёная — раскладка помещается, красная — не хватает
+    const sf = stockFit(r);
+    if (sf) {
+      const X = sf.stock * 100 * sc;
+      c.strokeStyle = sf.ok ? POS : NEG; c.lineWidth = 2; c.setLineDash([6, 3]);
+      c.beginPath(); c.moveTo(X, -4); c.lineTo(X, r.W * sc + 16); c.stroke(); c.setLineDash([]); c.lineWidth = 1;
+      c.fillStyle = sf.ok ? POS : NEG; c.font = '10px "JetBrains Mono", monospace';
+      const lbl = `мой отрез ${fmt(sf.stock, 2)} м${sf.ok ? '' : ' — не хватает ' + fmt(-sf.left, 2) + ' м'}`;
+      const right = X + 8 + c.measureText(lbl).width > W - 20; // у правого края подпись — слева от линии
+      c.textAlign = right ? 'right' : 'left'; c.fillText(lbl, right ? X - 4 : X + 4, r.W * sc + 27); c.textAlign = 'left';
+    }
     c.fillStyle = '#6d6961'; c.font = '9px "JetBrains Mono", monospace';
     for (let u = 0; u <= r.length; u += 50) { c.fillRect(u * sc, r.W * sc, 1, 4); c.fillText(u + '', u * sc + 2, r.W * sc + 12); }
     c.restore();
