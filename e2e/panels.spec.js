@@ -56,3 +56,24 @@ test('все вкладки, инспекторы, справка и вид ра
   await expect(page.locator('#stats')).toContainText('точек');
   await expect(page.locator('#waste')).toContainText('использование');
 });
+
+test('инспектор и левую панель можно скрыть: ×, полоска у края, клавиши [ ]; 3D занимает место', async ({ page }) => {
+  await openApp(page);
+  const w3d = () => page.evaluate(() => document.getElementById('v3d').clientWidth);
+  const before = await w3d();
+  await page.click('#rClose');
+  await expect(page.locator('#right')).toBeHidden();
+  await expect(page.locator('#rOpen')).toBeVisible();
+  await expect.poll(w3d).toBeGreaterThan(before + 60);
+  await page.keyboard.press('BracketLeft');
+  await expect(page.locator('#left')).toBeHidden();
+  // состояние запоминается
+  await page.reload();
+  await page.waitForFunction(() => window.__app?.sim?.N > 0, null, { timeout: 30_000 });
+  await expect(page.locator('#right')).toBeHidden();
+  await page.click('#rOpen');
+  await expect(page.locator('#right')).toBeVisible();
+  await page.keyboard.press('BracketLeft');
+  await expect(page.locator('#left')).toBeVisible();
+  await expect.poll(w3d).toBe(before);
+});

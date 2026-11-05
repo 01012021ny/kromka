@@ -61,9 +61,23 @@ export function init(app) {
     const up = () => { split.removeEventListener('pointermove', mv); split.removeEventListener('pointerup', up); };
     split.addEventListener('pointermove', mv); split.addEventListener('pointerup', up);
   });
+  // боковые панели: скрыть / показать (× в углу, полоска у края, клавиши [ и ])
+  try { app.panels = JSON.parse(localStorage.getItem('kromka.panels') || 'null') || { l: true, r: true }; } catch (e) { app.panels = { l: true, r: true }; }
+  const panels = () => {
+    const el = $('#app');
+    el.classList.toggle('noL', !app.panels.l); el.classList.toggle('noR', !app.panels.r);
+    try { localStorage.setItem('kromka.panels', JSON.stringify(app.panels)); } catch (e) { /* приватный режим */ }
+    app.view3d.invalidate(4); app.editor.dirty = true;
+  };
+  app.togglePanel = (k, on) => { app.panels[k] = on ?? !app.panels[k]; panels(); };
+  $('#lClose').onclick = () => app.togglePanel('l', false); $('#lOpen').onclick = () => app.togglePanel('l', true);
+  $('#rClose').onclick = () => app.togglePanel('r', false); $('#rOpen').onclick = () => app.togglePanel('r', true);
+  panels();
   // keys
   window.addEventListener('keydown', (e) => {
     if (e.target.closest && e.target.closest('input,textarea,select')) return;
+    // по коду клавиши — работает и в русской раскладке (х / ъ)
+    if (!e.ctrlKey && !e.metaKey && (e.code === 'BracketLeft' || e.code === 'BracketRight')) { app.togglePanel(e.code === 'BracketLeft' ? 'l' : 'r'); return; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? app.redo() : app.undo(); return; }
     if (e.key === ' ') { app.spaceDown = true; return; }
     if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(app); return; }

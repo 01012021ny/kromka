@@ -22,7 +22,18 @@ input[type=range]{padding:0;accent-color:#d9d3c5;width:100%;background:none;bord
 input[type=color]{padding:0;width:28px;height:24px;border:1px solid var(--ln2);background:none}
 input[type=number]{width:64px;font-family:var(--mono)}
 label{color:var(--tx2)}
-#app{display:grid;grid-template-rows:46px 1fr 28px;grid-template-columns:282px 1fr 300px;height:100vh}
+#app{--lw:282px;--rw:300px;display:grid;grid-template-rows:46px 1fr 28px;grid-template-columns:var(--lw) 1fr var(--rw);height:100vh}
+#app.noL{--lw:20px}#app.noR{--rw:20px}
+#left{grid-row:2;grid-column:1}main{grid-row:2;grid-column:2}#right{grid-row:2;grid-column:3}footer{grid-row:3}
+#app.noL #left,#app.noR #right,#app.noL #lClose,#app.noR #rClose{display:none}
+.pclose{grid-row:2;align-self:start;justify-self:end;z-index:3;margin:9px 14px 0 0;width:22px;height:22px;padding:0;border-radius:3px;background:var(--p1);color:var(--tx3);border:1px solid transparent;font-size:15px;line-height:1}
+.pclose:hover{color:var(--ac);border-color:var(--ln2)}
+#lClose{grid-column:1}#rClose{grid-column:3}
+.popen{display:none;grid-row:2;padding:0;border:0;border-radius:0;background:var(--p1);color:var(--tx3);font:10px var(--mono);letter-spacing:.14em;text-transform:uppercase;writing-mode:vertical-rl;cursor:pointer}
+.popen:hover{color:var(--ac);background:var(--p2)}
+#lOpen{grid-column:1;border-right:1px solid var(--ln);transform:rotate(180deg)}#rOpen{grid-column:3;border-left:1px solid var(--ln)}
+#app.noL #lOpen,#app.noR #rOpen{display:block}
+#left>.sec:first-child,#right>.sec:first-child{padding-right:34px}
 header{grid-column:1/4;display:flex;align-items:center;gap:14px;padding:0 12px;border-bottom:1px solid var(--ln);background:#0d0d0e}
 .brand{display:flex;align-items:baseline;gap:10px;min-width:276px}
 .brand b{font:700 17px/1 var(--sans);letter-spacing:.32em}
@@ -169,6 +180,8 @@ button.fc .n{opacity:.5;font:9px var(--mono);margin-left:4px}
     <div class="menu" id="menu"></div>
   </header>
   <aside id="left"></aside>
+  <button class="pclose" id="lClose" title="Скрыть левую панель — клавиша [">×</button>
+  <button class="popen" id="lOpen" title="Показать левую панель — клавиша [">Панель ›</button>
   <main>
     <section class="pane" id="p3d">
       <div class="bar">
@@ -189,6 +202,8 @@ button.fc .n{opacity:.5;font:9px var(--mono);margin-left:4px}
     </section>
   </main>
   <aside id="right"></aside>
+  <button class="pclose" id="rClose" title="Скрыть инспектор — клавиша ]">×</button>
+  <button class="popen" id="rOpen" title="Показать инспектор — клавиша ]">‹ Инспектор</button>
   <footer><span class="hint" id="hint"></span><span id="stats"></span><span id="waste"></span></footer>
 </div>
 <div id="toast"></div>
