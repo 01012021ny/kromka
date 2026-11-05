@@ -110,7 +110,7 @@ export const GEN_PARAMS = {
     ['knee', 'Обхват у колена', 30, 90, 1], ['kneeY', 'Узкое место выше колена на', -8, 14, 0.5], ['hem', 'Обхват низа', 24, 110, 1],
     ['hemBack', 'Низ сзади длиннее (под каблук)', 0, 4, 0.5], ['len', 'Длина от талии', 30, 140, 1], ['elastic', 'Пояс на резинке (0/1)', 0, 1, 1],
     ['artKnee', 'Сгиб у колена (рельеф с посадкой), см', 0, 4, 0.5], ['jeans', 'Джинсы: кокетка, карманы, пояс, гульфик (0/1)', 0, 1, 1],
-    ['buttonFly', 'Болт-фронт: пуговицы вместо молнии (0/1)', 0, 1, 1],
+    ['buttonFly', 'Болт-фронт: пуговицы вместо молнии (0/1)', 0, 1, 1], ['contour', 'Пояс по фигуре — контурный, для низкой посадки (0/1)', 0, 1, 1],
   ],
   skirt: [
     ['ease', 'Свобода по бёдрам', 0, 40, 1], ['len', 'Длина от талии', 25, 130, 1], ['flare', 'Расширение к низу', 0, 60, 1], ['rise', 'Посадка ±', -10, 6, 0.5],
@@ -120,7 +120,7 @@ export const GEN_PARAMS = {
 };
 
 // значения новых параметров для изделий, созданных до их появления
-export const GEN_DEFAULTS = { pants: { kneeY: 0, hemBack: 0, jeans: 0, artKnee: 0, buttonFly: 0 } };
+export const GEN_DEFAULTS = { pants: { kneeY: 0, hemBack: 0, jeans: 0, artKnee: 0, buttonFly: 0, contour: 0 } };
 
 export const GARMENT_PRESETS = [
   { id: 'tee', cat: 'Верх', name: 'Футболка базовая', gen: 'top', layer: 1, mat: 'jer180', p: { ease: 10, len: 70, sleeve: 21, drop: 0, bicep: 6, cuff: 0, cuffEl: 0, neckW: 1, neckF: 8, neckB: 2, armDrop: 1, hemCurve: 0, asym: 0, flare: 1, waist: 0, open: 0, overlap: 0 } },
@@ -133,10 +133,10 @@ export const GARMENT_PRESETS = [
   { id: 'dropc', cat: 'Брюки', name: 'Брюки с заниженной мотнёй', gen: 'pants', layer: 0, mat: 'jer260', p: { ease: 18, rise: -2, drop: 26, knee: 50, kneeY: 0, hem: 30, hemBack: 0, len: 108, elastic: 1, jeans: 0 } },
   // джинсы: пятикарманка — кокетка, карманы с бочком, пояс с выступом, гульфик на молнии
   { id: 'jeans', cat: 'Джинсы', name: 'Джинсы прямые, 5 карманов', gen: 'pants', layer: 0, mat: 'den12', p: { ease: 6, rise: -1, drop: 0, knee: 44, kneeY: 0, hem: 41, hemBack: 0.5, len: 104, elastic: 0, jeans: 1 } },
-  { id: 'bootcut', cat: 'Джинсы', name: 'Джинсы bootcut (слегка расклешённые от колена)', gen: 'pants', layer: 0, mat: 'den11s', p: { ease: 4, rise: -3, drop: 0, knee: 39, kneeY: 2, hem: 48, hemBack: 1.5, len: 108, elastic: 0, jeans: 1 } },
-  { id: 'flare', cat: 'Джинсы', name: 'Джинсы клёш (flared)', gen: 'pants', layer: 0, mat: 'den11s', p: { ease: 3, rise: -4, drop: 0, knee: 37, kneeY: 6, hem: 64, hemBack: 2, len: 112, elastic: 0, jeans: 1 } },
-  { id: 'skinny', cat: 'Джинсы', name: 'Джинсы узкие (skinny)', gen: 'pants', layer: 0, mat: 'den11s', p: { ease: 2, rise: -3, drop: 0, knee: 34, kneeY: 0, hem: 28, hemBack: 0, len: 106, elastic: 0, jeans: 1 } },
-  { id: 'stack', cat: 'Джинсы', name: 'Джинсы stacked — длинные, с набегом у стопы', gen: 'pants', layer: 0, mat: 'den11s', p: { ease: 3, rise: -3, drop: 0, knee: 36, kneeY: 3, hem: 44, hemBack: 1, len: 122, elastic: 0, jeans: 1 } },
+  { id: 'bootcut', cat: 'Джинсы', name: 'Джинсы bootcut (слегка расклешённые от колена)', gen: 'pants', layer: 0, mat: 'den11s', p: { ease: 4, rise: -3, drop: 0, knee: 39, kneeY: 2, hem: 48, hemBack: 1.5, len: 108, elastic: 0, jeans: 1, contour: 1 } },
+  { id: 'flare', cat: 'Джинсы', name: 'Джинсы клёш (flared)', gen: 'pants', layer: 0, mat: 'den11s', p: { ease: 3, rise: -4, drop: 0, knee: 37, kneeY: 6, hem: 64, hemBack: 2, len: 112, elastic: 0, jeans: 1, contour: 1 } },
+  { id: 'skinny', cat: 'Джинсы', name: 'Джинсы узкие (skinny)', gen: 'pants', layer: 0, mat: 'den11s', p: { ease: 2, rise: -3, drop: 0, knee: 34, kneeY: 0, hem: 28, hemBack: 0, len: 106, elastic: 0, jeans: 1, contour: 1 } },
+  { id: 'stack', cat: 'Джинсы', name: 'Джинсы stacked — длинные, с набегом у стопы', gen: 'pants', layer: 0, mat: 'den11s', p: { ease: 3, rise: -3, drop: 0, knee: 36, kneeY: 3, hem: 44, hemBack: 1, len: 122, elastic: 0, jeans: 1, contour: 1 } },
   { id: 'wideleg', cat: 'Джинсы', name: 'Джинсы широкие, мотня ниже', gen: 'pants', layer: 0, mat: 'den14', p: { ease: 16, rise: -2, drop: 12, knee: 58, kneeY: 0, hem: 56, hemBack: 1, len: 106, elastic: 0, jeans: 1 } },
   { id: 'skirt', cat: 'Юбки', name: 'Юбка длинная, расклешённая', gen: 'skirt', layer: 0, mat: 'lin185', p: { ease: 6, len: 88, flare: 18, rise: 0, asym: 0, elastic: 0 } },
   { id: 'snood', cat: 'Аксессуары из ткани', name: 'Снуд / хомут', gen: 'snood', layer: 3, mat: 'mohk', p: { w: 92, h: 42, y: 2 } },
@@ -462,14 +462,22 @@ export function genPants(M, p) {
   // (выкройка та же, а в 3D кольцо пояса равно линии притачивания); верх — линия сгиба, обтачка = ширина пояса
   const lF = polyLen(fWaist), lK = polyLen(kWaist), lY = polyLen(B.waist), ext = 3.5;
   const xs = [-(lF + lK + lY), -(lK + lY), -lY, 0, lY, lY + lK, lY + lK + lF];
-  const y0 = yT, y1 = yT + bandH;
+  const y0 = yT;
   const bt = ['f_L', 'k_L', 'y_L', 'y_R', 'k_R', 'f_R'];
+  // контурный пояс (низкая посадка): тело под поясом шире, чем над ним → верх короче низа, полоса — дуга кольца.
+  // Такой пояс не перегнуть по верху: кроится с отдельной обтачкой, верх — шов.
+  const Lb = xs[6] - xs[0], Lt = (Lb * (girthAt(yT + bandH) + 1.5)) / (girthAt(yT) + 1.5);
+  const arcR = P.contour && Lb - Lt > 0.5 ? (Lb * bandH) / (Lb - Lt) : 0;
+  const bp = (s, h) => (arcR ? [(arcR - h) * Math.sin(s / arcR), y0 + arcR - (arcR - h) * Math.cos(s / arcR)] : [s, y0 + h]);
+  const along = (s0, s1, h, n) => Array.from({ length: n + 1 }, (_, i) => bp(lerp(s0, s1, i / n), h));
+  const endR = { pts: [bp(xs[6], 0), bp(xs[6], bandH)], name: 'конец пояса, выступ под пуговицу ' + fmtN(ext), sa: ext + 1 };
+  const endL = { pts: [bp(xs[0], bandH), bp(xs[0], 0)], name: 'конец пояса', sa: 1 };
   const band = buildPiece('Пояс', [
-    ...bt.map((t, i) => ({ pts: line([xs[i], y0], [xs[i + 1], y0], Math.max(1, Math.round(xs[i + 1] - xs[i]))), name: 'шов пояса', sa: 1, tag: t })),
-    { pts: [[xs[6], y0], [xs[6], y1]], name: 'конец пояса, выступ под пуговицу ' + fmtN(ext), sa: ext + 1, tag: 'endR' },
-    { pts: line([xs[6], y1], [xs[0], y1], 40), name: 'пояс', sa: bandH + 1, fold: true, tag: 'top' },
-    { pts: [[xs[0], y1], [xs[0], y0]], name: 'конец пояса', sa: 1, tag: 'endL' },
-  ], { place: { kind: 'band' }, sym: false });
+    ...bt.map((t, i) => ({ pts: along(xs[i], xs[i + 1], 0, Math.max(1, Math.round(xs[i + 1] - xs[i]))), name: 'шов пояса', sa: 1, tag: t })),
+    { ...endR, tag: 'endR' },
+    arcR ? { pts: along(xs[6], xs[0], bandH, 40), name: 'пояс', sa: 1, tag: 'top' } : { pts: along(xs[6], xs[0], bandH, 40), name: 'пояс', sa: bandH + 1, fold: true, tag: 'top' },
+    { ...endL, tag: 'endL' },
+  ], { place: arcR ? { kind: 'band', arc: { cx: 0, cy: y0 + arcR, R: arcR, y0, len: Lb } } : { kind: 'band' }, sym: false });
   // внутренние детали: кроятся, но в 3D не драпируются
   const inner = (name, edges, matPreset) => { const pc = buildPiece(name, edges, { place: { kind: 'free' }, sym: false }); pc.inner = true; if (matPreset) pc.matPreset = matPreset; return pc; };
   const bagD = clamp(Hg * 0.25, 22, 30), xi = xP - 2.5, yb = yT - bagD;
@@ -498,6 +506,9 @@ export function genPants(M, p) {
     { pts: [[fsx, yJ - 2], [fsx + 9, yJ - 2]], name: 'край', raw: true }, { pts: [[fsx + 9, yJ - 2], [fsx + 9, yT]], name: 'край', raw: true },
     { pts: [[fsx + 9, yT], [fsx, yT]], name: 'шов пояса', sa: 1 }, { pts: [[fsx, yT], [fsx, yJ - 2]], name: 'средний шов', sa: 1 },
   ]);
+  const bandFacing = arcR ? inner('Обтачка пояса', [
+    { pts: along(xs[0], xs[6], 0, 40), name: 'край', sa: 1 }, { ...endR }, { pts: along(xs[6], xs[0], bandH, 40), name: 'верх пояса', sa: 1, tag: 'top' }, { ...endL },
+  ]) : null;
   const nLoops = Hg > 112 ? 7 : 5, loopL = nLoops * 9 + 2;
   const loops = inner(`Шлёвки — полоса, нарезать ${nLoops} × 9 см`, [
     { pts: [[0, 0], [3.6, 0]], name: 'край', raw: true }, { pts: [[3.6, 0], [3.6, loopL]], name: 'край', raw: true },
@@ -505,7 +516,7 @@ export function genPants(M, p) {
   ]);
   const bagFL = inner('Мешковина передняя (лев.)', bagFrontE, 'pock'), bagFR = inner('Мешковина передняя (прав.)', mirrorEdges(bagFrontE), 'pock');
   const bagBL = inner('Мешковина задняя (лев.)', bagBackE, 'pock'), bagBR = inner('Мешковина задняя (прав.)', mirrorEdges(bagBackE), 'pock');
-  pieces.push(fR, fL, ...(lowE ? [lL, lR] : []), kL, kR, bL, bR, yL, yR, band, bagFL, bagFR, bagBL, bagBR, flyFacing, flyShield, loops);
+  pieces.push(fR, fL, ...(lowE ? [lL, lR] : []), kL, kR, bL, bR, yL, yR, band, ...(bandFacing ? [bandFacing] : []), bagFL, bagFR, bagBL, bagBR, flyFacing, flyShield, loops);
 
   // накладки (кроятся отдельно, видны в 3D): задние карманы, часовой карман на правом бочке
   const pkW = clamp(Hg * 0.142, 12, 16.5), pkH = pkW * 1.07;
@@ -520,7 +531,8 @@ export function genPants(M, p) {
   const addHw = (pc, x, y, type, size, color) => { if (inside([x, y], pc.pts)) pc.hardware.push({ id: uid('h'), type, x, y, size, color }); };
   for (const [pc, m] of /** @type {[any, number][]} */ ([[fL, 1], [fR, -1]])) { addHw(pc, m * (xP - 0.8), yT - 1.0, 'rivet', 0.9, '#b5835a'); addHw(pc, m * (Sp[0] - 1.1), yP - 0.8, 'rivet', 0.9, '#b5835a'); }
   addHw(kR, -(cx0 + 0.5), cy1 - 0.6, 'rivet', 0.8, '#b5835a'); addHw(kR, -(cx1 - 0.5), cy1 - 0.6, 'rivet', 0.8, '#b5835a');
-  addHw(band, xs[0] + 1.7, y0 + bandH / 2, 'button', 1.7, '#8c8a85');
+  const bpos = bp(xs[0] + 1.7, bandH / 2);
+  addHw(band, bpos[0], bpos[1], 'button', 1.7, '#8c8a85');
   // J-строчка гульфика на левой половинке (двойная, контрастной нитью)
   for (const off of [3.6, 3.0]) {
     const pts = [];
@@ -542,6 +554,7 @@ export function genPants(M, p) {
   S(T(fL, 'cf'), T(fR, 'cf'), 'Средний шов переда до гульфика', 13);
   const bandTo = { f_L: fL, k_L: kL, y_L: yL, y_R: yR, k_R: kR, f_R: fR };
   for (const t of bt) S(T(band, t), T(bandTo[t], 'waist'), `Пояс: ${bandTo[t].name.replace(' половинка', '')}`, 16);
+  if (bandFacing) S(T(band, 'top'), T(bandFacing, 'top'), 'Пояс: верх с обтачкой', 16);
   S(T(band, 'endL'), T(band, 'endR'), 'Застёжка пояса: петля + пуговица (в 3D показана застёгнутой)', 17, { closure: true });
 
   const nFly = Math.max(3, Math.round(flyLen / 4.5)); // пуговицы болт-фронта, шаг ~4,5 см
@@ -559,7 +572,9 @@ export function genPants(M, p) {
       : 'Откосок — к левой половинке, молния — к откоску; гульфик со второй лентой молнии — к правой. Средний шов переда стачать от шага до низа гульфика, проложить J-строчку.',
     14: 'Стачать, обметать вместе, заутюжить к спинке; отстрочить у пояса 5–7 см (или по всей длине).',
     15: 'Запошивочным швом одной строчкой от низа одной брючины до низа другой.',
-    16: 'Притачать пояс лицом к изнанке, внутренний край подогнуть на 1 см, перегнуть по линии сгиба, настрочить с лица. Шлёвки: по бокам, у кокеток, на середине спинки.',
+    16: arcR
+      ? 'Контурный пояс: пояс и обтачку стачать по верху, вывернуть, приутюжить. Пояс притачать к брюкам, край обтачки подогнуть и настрочить с лица. Шлёвки: по бокам, у кокеток, на середине спинки.'
+      : 'Притачать пояс лицом к изнанке, внутренний край подогнуть на 1 см, перегнуть по линии сгиба, настрочить с лица. Шлёвки: по бокам, у кокеток, на середине спинки.',
     17: 'Петля на левом конце пояса, пуговица — на выступе (правый конец, 3,5 см за линией середины). Заклёпки на углы входа в карманы и часового кармана. Низ подогнуть 1 + 1,5 см.',
   };
   if (!kneeOn) { delete stepLabels[8]; delete stepNotes[8]; }

@@ -4,7 +4,7 @@ import { FINISHES, compString, makeMaterial } from '../materials.js';
 import { MEAS_LABELS, BODY_DEFAULT } from '../body.js';
 import { esc, fmt, polyLen, bbox, centroid, deep, area } from '../util.js';
 import { SIZES, sizesOf } from '../grading.js';
-import { exportSets, pdfTiles, dxf, plt, zip, svgNest } from '../export.js';
+import { exportSets, pdfVector, dxf, plt, zip, svgNest } from '../export.js';
 import { $ } from './controls.js';
 import { passportHTML } from './sample.js';
 
@@ -86,7 +86,8 @@ function openExport(app) {
   const bases = new Set(gs.map((g) => g.grading?.base || 'M'));
   dlg.innerHTML = `<div class="box"><h2 style="margin:0 0 4px">Лекала для производства</h2><p class="note">Все форматы — масштаб 1:1, с припусками, нитью, надсечками и подписями деталей.</p>
   <h4>Формат</h4><div class="list">
-  <label class="card"><input type="radio" name="fmt" value="pdf" checked><div><div class="t">PDF · листы А4 для печати</div><div class="s">склейка по крестикам, номера листов, контрольная линейка 10 см на каждом листе</div></div></label>
+  <label class="card"><input type="radio" name="fmt" value="pdf" checked><div><div class="t">PDF · листы А4 для домашнего принтера</div><div class="s">вектор: линии точные при любом увеличении; склейка по крестикам, номера листов, линейка 10 см на каждом листе</div></div></label>
+  <label class="card"><input type="radio" name="fmt" value="pdfA0"><div><div class="t">PDF · листы А0 для копицентра / плоттера</div><div class="s">крупные листы без склейки — брючина целиком на листе; печатать «по размеру» (100%)</div></div></label>
   <label class="card"><input type="radio" name="fmt" value="dxf"><div><div class="t">ZIP · DXF-AAMA + PLT (HPGL)</div><div class="s">для плоттера, раскройного комплекса и CAD (Gerber, Lectra, Optitex, Valentina); единицы — мм</div></div></label>
   <label class="card"><input type="radio" name="fmt" value="svg"><div><div class="t">SVG · веер размеров</div><div class="s">все размеры наложены друг на друга — проверка градации, печать на плоттере</div></div></label></div>
   <h4>Изделия</h4><div class="row" style="flex-wrap:wrap">${gs.map((g) => `<label style="margin-right:10px"><input type="checkbox" data-xg="${g.id}" checked> ${esc(g.name)}</label>`).join('')}</div>
@@ -109,12 +110,14 @@ function openExport(app) {
     if (!sets.length) { app.toast('Выберите хотя бы одно изделие и размер', 'neg'); return; }
     const fmtSel = dlg.querySelector('input[name=fmt]:checked').value;
     const tag = [...new Set(sets.map((s) => s.size))].join('-') + (sets[0]?.shrink ? '-usadka' : '');
-    if (fmtSel === 'pdf') {
-      app.toast('Готовлю листы А4…');
+    if (fmtSel === 'pdf' || fmtSel === 'pdfA0') {
+      const paper = fmtSel === 'pdfA0' ? 'A0' : 'A4';
+      app.toast(`Готовлю листы ${paper === 'A0' ? 'А0' : 'А4'}…`);
       await new Promise((r) => setTimeout(r, 30));
-      const r = await pdfTiles(app, sets);
-      app.toast(`PDF: ${r.pages} лист(ов), сетка ${r.rows}×${r.cols}`, 'pos');
-      app.save(`kromka-lekala-A4-${tag}.pdf`, r.blob);
+      let r;
+      try { r = await pdfVector(app, sets, paper); } catch (e) { console.error(e); app.toast('PDF не собрался: ' + (e?.message || e), 'neg'); return; }
+      app.toast(`PDF ${r.paper}: ${r.pages} лист(ов), сетка ${r.rows}×${r.cols}`, 'pos');
+      app.save(`kromka-lekala-${paper}-${tag}.pdf`, r.blob);
     } else if (fmtSel === 'dxf') {
       const z = zip([{ name: `kromka-${tag}.dxf`, data: dxf(app, sets) }, { name: `kromka-${tag}.plt`, data: plt(app, sets) }, { name: 'README.txt', data: 'КРОМКА — экспорт лекал\r\nDXF: формат AutoCAD R12, блоки по ASTM D6673 (AAMA): слой 1 — линия кроя, 14 — линия шва, 7 — нить, 4 — надсечки, 8 — накладки, 15 — подписи. Единицы — миллиметры.\r\nPLT: HPGL, 40 ед./мм, перо 1 — крой, перо 2 — шов.\r\n' }]);
       app.save(`kromka-lekala-${tag}.zip`, z);

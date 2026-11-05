@@ -151,11 +151,11 @@ export function placementCtx(garment, body, vis) {
   }
   // притачной пояс: кольцо вокруг торса на своей высоте, x = 0 — середина полосы (середина спинки), концы сходятся спереди
   for (const p of vis.filter((q) => q.place.kind === 'band')) {
-    const b = bbox(p.pts), r = body.ring((b.y0 + b.y1) / 2);
+    const b = bbox(p.pts), r = body.ring((b.y0 + b.y1) / 2), arc = p.place.arc;
     let A = r.a + gap, B = Math.max(r.bF, r.bB) + gap;
-    const k = b.w / ePerim(A, B);
+    const k = (arc ? arc.len : b.w) / ePerim(A, B); // контурный пояс — по длине дуги низа
     A *= k; B *= k;
-    (ctx.band ||= {})[p.id] = { A, B, map: ellipseTable(A, B), xc: (b.x0 + b.x1) / 2 };
+    (ctx.band ||= {})[p.id] = { A, B, map: ellipseTable(A, B), xc: arc ? 0 : (b.x0 + b.x1) / 2, arc };
   }
   ctx.neckR = body.m.neck / (2 * Math.PI) + gap;
   return ctx;
@@ -198,9 +198,11 @@ export function placePoint(piece, x, y, ctx, body, out) {
     out[1] = a.J.y + a.d.y * s + R * (Math.cos(th) * a.o.y);
     out[2] = a.J.z + a.d.z * s + R * Math.sin(th);
   } else if (pl.kind === 'band' && ctx.band?.[piece.id]) {
-    const { A, B, map, xc } = ctx.band[piece.id];
-    const th = map(x - xc);
-    out[0] = -A * Math.sin(th); out[1] = y; out[2] = -B * Math.cos(th);
+    const { A, B, map, xc, arc } = ctx.band[piece.id];
+    let s = x - xc, yy = y;
+    if (arc) { const dx = x - arc.cx, dy = arc.cy - y, r = Math.hypot(dx, dy); s = Math.atan2(dx, dy) * arc.R; yy = arc.y0 + arc.R - r; }
+    const th = map(s);
+    out[0] = -A * Math.sin(th); out[1] = yy; out[2] = -B * Math.cos(th);
   } else if (pl.kind === 'neck') {
     const w = bbox(piece.pts).w;
     const R = Math.max(ctx.neckR + 3, w / (2 * Math.PI));

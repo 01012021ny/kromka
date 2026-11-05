@@ -177,6 +177,18 @@ console.log('Сгиб у колена, болт-фронт, себестоимо
     let nan = 0, ymax = -1e9; for (let i = 0; i < sim.N; i++) { const y = sim.x[3 * i + 1]; if (!isFinite(y)) nan++; ymax = Math.max(ymax, y); }
     ok(`${id}: со сгибом у колена держится, без NaN`, nan === 0 && ymax > 97, `верх ${ymax.toFixed(0)}`);
   }
+  {
+    const { g, mat } = makeP('flare', {});
+    const band = g.pieces.find((p) => p.name === 'Пояс');
+    const len = (nm) => band.corners.reduce((a, c, k) => a + (band.meta[c.id].name === nm ? edgeLen(band, k) : 0), 0);
+    ok('контурный пояс: верх короче низа, обтачка отдельно', len('пояс') < len('шов пояса') - 2 && g.pieces.some((p) => p.name === 'Обтачка пояса' && p.inner), `${len('шов пояса').toFixed(1)} → ${len('пояс').toFixed(1)}`);
+    const rows = Object.fromEntries(patternSpec(g, body.m).map((r) => [r.key, r.val]));
+    ok('контурный пояс: в табеле мер высота пояса 4 см, а не габарит дуги', rows.outseam < 110, `${rows.outseam} см`);
+    const sim = drape([g], { [mat.id]: mat }, 300);
+    const r = sim.pieces.find((q) => q.piece.place.kind === 'band');
+    let by = 0; for (let i = r.off; i < r.off + r.n; i++) by += sim.x[3 * i + 1]; by /= r.n;
+    ok('контурный пояс: в 3D держится выше бёдер', by > body.m.y.hip + 6, `${by.toFixed(1)}`);
+  }
   const zip = makeP('jeans', {}).g, bf = makeP('jeans', { buttonFly: 1 }).g;
   ok('джинсы: молния в фурнитуре, болт-фронт — пуговицы', zip.trims[0].type === 'zipper' && bf.trims[0].type === 'button' && bf.trims[0].n >= 3 && bf.pieces.some((p) => p.name.startsWith('Откосок с петлями')));
   const { g, mat } = makeP('jeans', {});

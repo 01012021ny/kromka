@@ -1,5 +1,5 @@
 // @ts-check
-// Production exports: tiled A4 PDF at 1:1, DXF (AAMA/ASTM D6673-style blocks), HPGL/PLT, ZIP container, SVG with size nest
+// Production exports: vector PDF at 1:1 (A4 tiles or A0 sheets), DXF (AAMA/ASTM D6673-style blocks), HPGL/PLT, ZIP container, SVG with size nest
 import { cutOutline, edgePts, seamOf, overlayPiece } from './patterns.js';
 import { bbox, centroid, fmt, esc, polyLen } from './util.js';
 import { gradeGarment, sizesOf } from './grading.js';
@@ -37,123 +37,187 @@ export function exportSets(app, { garments, sizes, shrink = false }) {
 }
 
 // compact arrangement for paper / plotter: the nester with free rotation (paper has no grain); returns affine per piece
-export function printLayout(sets, rowW = 110, gap = 1.5) {
-  const src = [];
-  for (const s of sets) for (const p of s.pieces) src.push({ id: s.size + ':' + p.id, set: s, p, poly: cutOutline(p), grain: 0 });
+export function printLayout(sets, rowW = 110, gap = 1.5, only = null) {
+  let src = only;
+  if (!src) { src = []; for (const s of sets) for (const p of s.pieces) src.push({ id: s.size + ':' + p.id, set: s, p, poly: cutOutline(p), grain: 0 }); }
   const r = nestMaterial(src, { width: rowW, cons: 'plain', gsm: 1, shrink: null, price: 0 }, { shrink: false, rotate: true, gap, angles: [0, 90] });
   const items = [];
   for (const pl of r.placed) {
     if (pl.fail) continue;
     const it = pl.it, f = pl.m; // fabric (u,v) = f·(x,y); print: X = v, Y = −u
     const m = [f[1], -f[0], f[3], -f[2], f[5], -f[4]];
-    items.push({ set: it.set, p: it.p, co: it.poly, m, ox: 0, oy: 0, world: it.poly.map(([x, y]) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]]) });
+    items.push({ src: it, set: it.set, p: it.p, co: it.poly, m, ox: 0, oy: 0, world: it.poly.map(([x, y]) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]]) });
   }
   const all = items.flatMap((it) => it.world);
   return { items, bb: bbox(all.length ? all : [[0, 0]]) };
 }
 
-// draw one piece in world cm (y up) into a 2D context already transformed
-function drawPiece(c, it, px, mats, opts = {}) {
-  const { p, set } = it;
-  c.save(); if (it.m) c.transform(it.m[0], it.m[1], it.m[2], it.m[3], it.m[4], it.m[5]); else c.translate(it.ox, it.oy);
-  const pth = (pts) => { c.beginPath(); pts.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); c.closePath(); };
-  pth(it.co); c.strokeStyle = '#000'; c.lineWidth = 2.2 * px; c.setLineDash([]); c.stroke();
-  pth(p.pts); c.lineWidth = 1 * px; c.setLineDash([6 * px, 4 * px]); c.stroke(); c.setLineDash([]);
-  for (const o of p.overlays || []) { pth(o.pts); c.lineWidth = 0.8 * px; c.setLineDash([3 * px, 3 * px]); c.stroke(); c.setLineDash([]); }
-  // notches + seam letters
-  for (let k = 0; k < p.corners.length; k++) {
-    const cid = p.corners[k].id, sm = seamOf(set.g, p.id, cid);
-    if (!sm) continue;
-    const e = edgePts(p, k), mi = Math.floor(e.length / 2), m = e[mi];
-    const a = e[Math.max(0, mi - 1)], b = e[Math.min(e.length - 1, mi + 1)];
-    let nx = b[1] - a[1], ny = -(b[0] - a[0]); const l = Math.hypot(nx, ny) || 1; nx /= l; ny /= l;
-    const sa = p.meta[cid]?.sa ?? 1;
-    c.beginPath(); c.moveTo(m[0], m[1]); c.lineTo(m[0] + nx * (sa + 0.05), m[1] + ny * (sa + 0.05)); c.lineWidth = 2 * px; c.stroke();
-    const idx = set.g.seams.indexOf(sm);
-    text(c, String.fromCharCode(65 + (idx % 26)) + (idx >= 26 ? Math.floor(idx / 26) : ''), m[0] - nx * 1.3, m[1] - ny * 1.3, px, 11, '600');
-  }
-  // grain
-  const ct = centroid(p.pts), bb = bbox(p.pts), ga = ((p.grain || 0) * Math.PI) / 180, gl = Math.min(bb.h, bb.w) * 0.32;
-  const gx = Math.sin(ga) * gl, gy = Math.cos(ga) * gl;
-  c.lineWidth = 1.2 * px;
-  c.beginPath(); c.moveTo(ct[0] - gx, ct[1] - gy); c.lineTo(ct[0] + gx, ct[1] + gy); c.stroke();
-  for (const s of [1, -1]) { const tx = ct[0] + s * gx, ty = ct[1] + s * gy; c.beginPath(); c.moveTo(tx, ty); c.lineTo(tx - s * Math.sin(ga) * 1.4 + Math.cos(ga) * 0.6, ty - s * Math.cos(ga) * 1.4 - Math.sin(ga) * 0.6); c.moveTo(tx, ty); c.lineTo(tx - s * Math.sin(ga) * 1.4 - Math.cos(ga) * 0.6, ty - s * Math.cos(ga) * 1.4 + Math.sin(ga) * 0.6); c.stroke(); }
-  const mat = mats[p.mat];
-  text(c, p.name, ct[0] + 1.2, ct[1] + 3, px, 15, '700', 'left');
-  text(c, `${set.g.name} · размер ${set.size}`, ct[0] + 1.2, ct[1] + 1.2, px, 11, '400', 'left');
-  text(c, `${mat ? mat.name : ''} · крой 1 · нить ${p.grain || 0}°`, ct[0] + 1.2, ct[1] - 0.4, px, 11, '400', 'left');
-  if (opts.lengths) for (let k = 0; k < p.corners.length; k++) { const e = edgePts(p, k), m = e[Math.floor(e.length / 2)]; text(c, fmt(polyLen(e)), m[0], m[1], px, 9, '400'); }
-  c.restore();
+// ───────── PDF 1:1, вектор ─────────
+// Линии (крой, шов, накладки, надсечки, нить, линейка) — векторные пути: точны при любом увеличении и на плоттере.
+// Подписи — однобитные маски 400 dpi (кириллица без встраивания шрифта). Весь чертёж — одна форма (Form XObject),
+// каждый лист показывает её участок: файл лёгкий даже на десятки листов А4.
+export const PAPER = { A4: { w: 21, h: 29.7, name: 'А4', row: 114 }, A0: { w: 84.1, h: 118.9, name: 'А0', row: 82 } };
+
+const n2 = (v) => (Math.round(v * 1000) / 1000).toString();
+async function deflateU8(u8) {
+  if (typeof CompressionStream === 'undefined') return null;
+  const cs = new CompressionStream('deflate');
+  return new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(cs)).arrayBuffer());
 }
-function text(c, s, x, y, px, size, weight = '400', align = 'center') {
-  c.save(); c.translate(x, y); c.scale(px, -px);
-  c.font = `${weight} ${size}px "Inter Tight", Arial, sans-serif`; c.fillStyle = '#000'; c.textAlign = align; c.textBaseline = 'middle';
-  c.fillText(s, 0, 0); c.restore();
+// RunLengthDecode (стандартный фильтр PDF): синхронно и быстро — для сотен мелких масок подписей
+// (CompressionStream на каждую мелочь проходит через очередь задач браузера и растягивается на минуты)
+function rle(u8) {
+  const out = [];
+  let i = 0;
+  while (i < u8.length) {
+    let j = i + 1;
+    while (j < u8.length && j - i < 128 && u8[j] === u8[i]) j++;
+    if (j - i >= 2) { out.push(257 - (j - i), u8[i]); i = j; continue; }
+    j = i + 1;
+    while (j < u8.length && j - i < 128 && !(j + 1 < u8.length && u8[j] === u8[j + 1])) j++;
+    out.push(j - i - 1); for (let k = i; k < j; k++) out.push(u8[k]);
+    i = j;
+  }
+  out.push(128);
+  return Uint8Array.from(out);
+}
+// подпись → однобитная маска (1 — краска), размеры в см
+function labelMask(s, sizePx, weight) {
+  const RES = 400 / 2.54, f = (sizePx * 400) / 150; // кегль задан в пикселях при 150 dpi (как в растровой версии)
+  const cv = document.createElement('canvas'), c = cv.getContext('2d');
+  c.font = `${weight} ${f}px "Inter Tight", Arial, sans-serif`;
+  const W = Math.max(2, Math.ceil(c.measureText(s).width) + 4), H = Math.max(2, Math.ceil(f * 1.35));
+  cv.width = W; cv.height = H;
+  c.font = `${weight} ${f}px "Inter Tight", Arial, sans-serif`; c.fillStyle = '#000'; c.textBaseline = 'middle'; c.fillText(s, 2, H / 2);
+  const a = c.getImageData(0, 0, W, H).data, rb = Math.ceil(W / 8), bits = new Uint8Array(rb * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (a[(y * W + x) * 4 + 3] > 110) bits[y * rb + (x >> 3)] |= 0x80 >> (x & 7);
+  return { W, H, bits, wcm: W / RES, hcm: H / RES };
 }
 
-// ───────── PDF (A4 tiles, 1:1) ─────────
-export async function pdfTiles(app, sets, dpi = 150) {
-  const L = printLayout(sets, 114);
+export async function pdfVector(app, sets, paperKey = 'A4') {
+  const P = PAPER[paperKey] || PAPER.A4;
   const mats = app.matsById();
-  const PW = 21, PH = 29.7, MG = 1.0, FOOT = 1.4; // cm
+  const PW = P.w, PH = P.h, MG = 1.0, FOOT = 1.4;
   const TW = PW - 2 * MG, TH = PH - 2 * MG - FOOT;
-  const cols = Math.max(1, Math.ceil(L.bb.w / TW)), rows = Math.max(1, Math.ceil(L.bb.h / TH));
-  const pxcm = dpi / 2.54, W = Math.round(PW * pxcm), H = Math.round(PH * pxcm);
-  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-  const c = cv.getContext('2d');
-  const pages = [];
-  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  for (let r = 0; r < rows; r++) for (let q = 0; q < cols; q++) {
-    const wx0 = L.bb.x0 + q * TW, wy1 = L.bb.y1 - r * TH; // tile top-left in world
-    const used = L.items.some((it) => { const b = bbox(it.world); return b.x1 > wx0 && b.x0 < wx0 + TW && b.y0 < wy1 && b.y1 > wy1 - TH; });
-    if (!used) continue;
-    c.setTransform(1, 0, 0, 1, 0, 0); c.fillStyle = '#fff'; c.fillRect(0, 0, W, H);
-    // tile frame
-    c.strokeStyle = '#999'; c.lineWidth = 1; c.setLineDash([4, 4]); c.strokeRect(MG * pxcm, MG * pxcm, TW * pxcm, TH * pxcm); c.setLineDash([]);
-    // registration crosses
-    c.strokeStyle = '#000'; c.lineWidth = 1.2;
-    for (const [cx, cy] of [[MG, MG], [MG + TW, MG], [MG, MG + TH], [MG + TW, MG + TH]]) { c.beginPath(); c.moveTo((cx - 0.6) * pxcm, cy * pxcm); c.lineTo((cx + 0.6) * pxcm, cy * pxcm); c.moveTo(cx * pxcm, (cy - 0.6) * pxcm); c.lineTo(cx * pxcm, (cy + 0.6) * pxcm); c.stroke(); }
-    // content clipped to tile
-    c.save();
-    c.beginPath(); c.rect(MG * pxcm, MG * pxcm, TW * pxcm, TH * pxcm); c.clip();
-    c.setTransform(pxcm, 0, 0, -pxcm, (MG - wx0) * pxcm, (MG + wy1) * pxcm);
-    for (const it of L.items) drawPiece(c, it, 1 / pxcm, mats);
-    c.restore();
-    // footer: id, neighbours, 10 cm ruler
-    c.setTransform(1, 0, 0, 1, 0, 0);
-    const id = letters[r % 26] + (q + 1);
-    c.fillStyle = '#000'; c.font = `600 ${Math.round(0.42 * pxcm)}px Arial`; c.textBaseline = 'middle';
-    const fy = (PH - MG - FOOT / 2) * pxcm;
-    c.fillText(`ЛИСТ ${id}  ·  ${rows}×${cols}  ·  МАСШТАБ 1:1`, MG * pxcm, fy);
-    c.font = `${Math.round(0.3 * pxcm)}px Arial`;
-    c.fillText(`↑ ${r > 0 ? letters[(r - 1) % 26] + (q + 1) : '—'}   ← ${q > 0 ? letters[r % 26] + q : '—'}   → ${q < cols - 1 ? letters[r % 26] + (q + 2) : '—'}   ↓ ${r < rows - 1 ? letters[(r + 1) % 26] + (q + 1) : '—'}   КРОМКА`, MG * pxcm, fy + 0.45 * pxcm);
-    const rx = (PW - MG - 10) * pxcm;
-    c.fillRect(rx, fy - 0.08 * pxcm, 10 * pxcm, 0.16 * pxcm);
-    for (let i = 0; i <= 10; i++) c.fillRect(rx + i * pxcm - 1, fy - 0.3 * pxcm, 2, i % 5 ? 0.22 * pxcm : 0.38 * pxcm);
-    c.font = `${Math.round(0.28 * pxcm)}px Arial`; c.fillText('проверка: 10 см', rx, fy + 0.45 * pxcm);
-    const gray = new Uint8Array(W * H), img = c.getImageData(0, 0, W, H).data;
-    for (let i = 0, j = 0; i < gray.length; i++, j += 4) gray[i] = (img[j] * 0.3 + img[j + 1] * 0.59 + img[j + 2] * 0.11) | 0;
-    pages.push({ gray, W, H });
+  // А4 — одна общая раскладка, разрезанная на листы для склейки. Крупный лист (А0) — детали раскладываются по листам
+  // целиком: что не влезло в высоту листа, переносится на следующий (склейки нет).
+  const sheets = [];
+  if (paperKey === 'A4') sheets.push(printLayout(sets, P.row));
+  else {
+    let rest = null;
+    for (let guard = 0; guard < 60; guard++) {
+      const L = printLayout(sets, TW, 1.5, rest);
+      if (!L.items.length) break;
+      let take = L.items.filter((it) => bbox(it.world).y0 >= L.bb.y1 - TH - 0.01);
+      if (!take.length) take = [L.items[0]]; // деталь выше листа — пусть переходит на соседний
+      const lay = { items: take, bb: bbox(take.flatMap((it) => it.world)) };
+      sheets.push(lay);
+      const used = new Set(take.map((it) => it.src));
+      rest = L.items.filter((it) => !used.has(it.src)).map((it) => it.src);
+      if (!rest.length) break;
+    }
   }
-  const objs = [];
+  const tiles = sheets.map((L) => ({ L, cols: Math.max(1, Math.ceil(L.bb.w / TW - 0.001)), rows: Math.max(1, Math.ceil(L.bb.h / TH - 0.001)) }));
+  const rows = tiles.reduce((a, t) => a + t.rows, 0), cols = Math.max(...tiles.map((t) => t.cols));
   const enc = new TextEncoder();
-  const deflate = async (u8) => {
-    if (typeof CompressionStream === 'undefined') return null;
-    const cs = new CompressionStream('deflate');
-    const out = new Response(new Blob([u8]).stream().pipeThrough(cs)).arrayBuffer();
-    return new Uint8Array(await out);
+  const masks = new Map(); // ключ → { name, m }
+  const mask = (s, size, weight) => { const k = s + '|' + size + '|' + weight; if (!masks.has(k)) masks.set(k, { name: 'L' + masks.size, m: labelMask(s, size, weight) }); return masks.get(k); };
+  // подпись в текущей системе координат (см, y вверх): align — center | left, по вертикали — по середине
+  // flip — деталь на листе повёрнута «вверх ногами»: подпись разворачиваем на 180°, чтобы читалась
+  let flip = false;
+  const txt = (s, x, y, size, weight = '400', align = 'center') => {
+    const t = mask(String(s), size, weight), w = t.m.wcm, h = t.m.hcm, x0 = align === 'center' ? x - w / 2 : x - 0.05, y0 = y - h / 2;
+    return flip ? `q ${n2(-w)} 0 0 ${n2(-h)} ${n2(x0 + w)} ${n2(y0 + h)} cm /${t.name} Do Q\n` : `q ${n2(w)} 0 0 ${n2(h)} ${n2(x0)} ${n2(y0)} cm /${t.name} Do Q\n`;
   };
+  const path = (pts, close = true) => pts.map((q, i) => `${n2(q[0])} ${n2(q[1])} ${i ? 'l' : 'm'}`).join(' ') + (close ? ' h' : '') + ' S\n';
+  // ── форма на каждую раскладку: весь чертёж в мировых см
+  const drawForm = (L) => {
+    let F = '0 G 0 g 1 J 1 j\n';
+    for (const it of L.items) {
+      const { p, set } = it, m = it.m;
+      flip = m[0] < -0.2; // ось x детали смотрит влево — текст был бы перевёрнут
+      F += `q ${m.map(n2).join(' ')} cm\n`;
+      F += `0.045 w [] 0 d\n${path(it.co)}`; // линия кроя
+      F += `0.018 w [0.16 0.1] 0 d\n${path(p.pts)}`; // линия шва
+      for (const o of p.overlays || []) F += `0.015 w [0.08 0.08] 0 d\n${path(o.pts)}`;
+      F += '[] 0 d\n';
+      for (let k = 0; k < p.corners.length; k++) {
+        const cid = p.corners[k].id, sm = seamOf(set.g, p.id, cid);
+        if (!sm) continue;
+        const e = edgePts(p, k), mi = Math.floor(e.length / 2), q = e[mi];
+        const a = e[Math.max(0, mi - 1)], b = e[Math.min(e.length - 1, mi + 1)];
+        let nx = b[1] - a[1], ny = -(b[0] - a[0]); const l = Math.hypot(nx, ny) || 1; nx /= l; ny /= l;
+        const sa = p.meta[cid]?.sa ?? 1;
+        F += `0.035 w ${path([q, [q[0] + nx * (sa + 0.05), q[1] + ny * (sa + 0.05)]], false)}`;
+        const idx = set.g.seams.indexOf(sm);
+        F += txt(String.fromCharCode(65 + (idx % 26)) + (idx >= 26 ? Math.floor(idx / 26) : ''), q[0] - nx * 1.3, q[1] - ny * 1.3, 11, '600');
+      }
+      const ct = centroid(p.pts), bb = bbox(p.pts), ga = ((p.grain || 0) * Math.PI) / 180, gl = Math.min(bb.h, bb.w) * 0.32;
+      const gx = Math.sin(ga) * gl, gy = Math.cos(ga) * gl;
+      F += `0.02 w ${path([[ct[0] - gx, ct[1] - gy], [ct[0] + gx, ct[1] + gy]], false)}`;
+      for (const sg of [1, -1]) {
+        const tx = ct[0] + sg * gx, ty = ct[1] + sg * gy;
+        F += path([[tx - sg * Math.sin(ga) * 1.4 + Math.cos(ga) * 0.6, ty - sg * Math.cos(ga) * 1.4 - Math.sin(ga) * 0.6], [tx, ty], [tx - sg * Math.sin(ga) * 1.4 - Math.cos(ga) * 0.6, ty - sg * Math.cos(ga) * 1.4 + Math.sin(ga) * 0.6]], false);
+      }
+      const mat = mats[p.mat];
+      F += txt(p.name, ct[0] + 1.2, ct[1] + 3, 15, '700', 'left');
+      F += txt(`${set.g.name} · размер ${set.size}`, ct[0] + 1.2, ct[1] + 1.2, 11, '400', 'left');
+      F += txt(`${mat ? mat.name : ''} · крой 1 · нить ${p.grain || 0}°`, ct[0] + 1.2, ct[1] - 0.4, 11, '400', 'left');
+      F += 'Q\n';
+    }
+    flip = false;
+    return F;
+  };
+  const forms = tiles.map((t) => { masks.clear(); const F = drawForm(t.L); return { F, masks: [...masks.values()] }; });
+  // ── листы
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const pages = [];
+  tiles.forEach((T, si) => {
+    const L = T.L;
+    for (let r = 0; r < T.rows; r++) for (let q = 0; q < T.cols; q++) {
+      const wx0 = L.bb.x0 + q * TW, wy1 = L.bb.y1 - r * TH;
+      const used = L.items.some((it) => { const b = bbox(it.world); return b.x1 > wx0 && b.x0 < wx0 + TW && b.y0 < wy1 && b.y1 > wy1 - TH; });
+      if (!used) continue;
+      masks.clear();
+      const single = T.rows === 1 && T.cols === 1;
+      const id = paperKey === 'A4' ? letters[r % 26] + (q + 1) : String(si + 1) + (single ? '' : '-' + letters[r % 26] + (q + 1));
+      const top = PH - MG, bot = top - TH, fy = MG + FOOT / 2;
+      let C = `${n2(72 / 2.54)} 0 0 ${n2(72 / 2.54)} 0 0 cm 0 G 0 g\n`;
+      C += `0.6 G 0.02 w [0.15 0.15] 0 d ${n2(MG)} ${n2(bot)} ${n2(TW)} ${n2(TH)} re S [] 0 d 0 G\n`;
+      C += '0.03 w\n';
+      for (const [cx, cy] of [[MG, top], [MG + TW, top], [MG, bot], [MG + TW, bot]]) C += path([[cx - 0.6, cy], [cx + 0.6, cy]], false) + path([[cx, cy - 0.6], [cx, cy + 0.6]], false);
+      C += `q ${n2(MG)} ${n2(bot)} ${n2(TW)} ${n2(TH)} re W n 1 0 0 1 ${n2(MG - wx0)} ${n2(top - wy1)} cm /Fm${si} Do Q\n`;
+      const head = paperKey === 'A4' ? `ЛИСТ ${id}  ·  ${T.rows}×${T.cols}` : `ЛИСТ ${id} ИЗ ${tiles.length}  ·  БЕЗ СКЛЕЙКИ`;
+      C += txt(`${head}  ·  ${P.name}  ·  МАСШТАБ 1:1`, MG, fy + 0.22, 16, '600', 'left');
+      const hint = 'печатать 100%, без «по размеру страницы»';
+      if (paperKey === 'A4') C += txt(`↑ ${r > 0 ? letters[(r - 1) % 26] + (q + 1) : '—'}   ← ${q > 0 ? letters[r % 26] + q : '—'}   → ${q < T.cols - 1 ? letters[r % 26] + (q + 2) : '—'}   ↓ ${r < T.rows - 1 ? letters[(r + 1) % 26] + (q + 1) : '—'}   ·   ${hint}`, MG, fy - 0.3, 11, '400', 'left');
+      else C += txt(`Деталей на листе: ${L.items.length}   ·   ${hint}   ·   КРОМКА`, MG, fy - 0.3, 11, '400', 'left');
+      // контрольная линейка 10 см — вектор: проверка, что печать без масштабирования
+      const rx = PW - MG - 10;
+      C += `${n2(rx)} ${n2(fy + 0.15)} 10 0.12 re f\n`;
+      for (let i = 0; i <= 10; i++) C += `${n2(rx + i - 0.01)} ${n2(fy + 0.15 - (i % 5 ? 0.18 : 0.32))} 0.02 ${n2(i % 5 ? 0.18 : 0.32)} re f\n`;
+      C += txt('проверка: 10 см', rx, fy - 0.35, 10, '400', 'left');
+      pages.push({ content: C, masks: [...masks.values()] });
+    }
+  });
+  // ── сборка файла
+  const objs = []; // [{ head, stream }]
+  const add = (o) => { objs.push(o); return objs.length + 2; }; // 1 — каталог, 2 — дерево страниц
+  const streamObj = async (dict, u8) => { const z = await deflateU8(u8); return { head: `<< ${dict}${z ? ' /Filter /FlateDecode' : ''} /Length ${(z || u8).length} >>`, stream: z || u8 }; };
+  const plainObj = (dict, u8) => ({ head: `<< ${dict} /Length ${u8.length} >>`, stream: u8 });
+  const maskObj = (t) => { const z = rle(t.m.bits); return { head: `<< /Type /XObject /Subtype /Image /ImageMask true /Width ${t.m.W} /Height ${t.m.H} /BitsPerComponent 1 /Decode [1 0] /Filter /RunLengthDecode /Length ${z.length} >>`, stream: z }; };
+  const maskIds = (list) => list.map((t) => [t.name, add(maskObj(t))]);
+  const formIds = [];
+  for (let i = 0; i < forms.length; i++) {
+    const fm = maskIds(forms[i].masks), fb = tiles[i].L.bb;
+    formIds.push(add(await streamObj(`/Type /XObject /Subtype /Form /BBox [${n2(fb.x0 - 5)} ${n2(fb.y0 - 5)} ${n2(fb.x1 + 5)} ${n2(fb.y1 + 5)}] /Resources << /XObject << ${fm.map(([n, j]) => `/${n} ${j} 0 R`).join(' ')} >> >>`, enc.encode(forms[i].F))));
+  }
   const ptW = (PW / 2.54) * 72, ptH = (PH / 2.54) * 72;
   const pageIds = [];
   for (const pg of pages) {
-    const data = (await deflate(pg.gray)) || pg.gray;
-    const filt = data === pg.gray ? '' : '/Filter /FlateDecode ';
-    const imgId = objs.length + 3;
-    objs.push({ head: `<< /Type /XObject /Subtype /Image /Width ${pg.W} /Height ${pg.H} /ColorSpace /DeviceGray /BitsPerComponent 8 ${filt}/Length ${data.length} >>`, stream: data });
-    const content = enc.encode(`q ${ptW.toFixed(2)} 0 0 ${ptH.toFixed(2)} 0 0 cm /Im0 Do Q`);
-    objs.push({ head: `<< /Length ${content.length} >>`, stream: content });
-    objs.push({ head: `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${ptW.toFixed(2)} ${ptH.toFixed(2)}] /Resources << /XObject << /Im0 ${imgId} 0 R >> >> /Contents ${imgId + 1} 0 R >>` });
-    pageIds.push(imgId + 2);
+    const pm = maskIds(pg.masks);
+    const cId = add(plainObj('', enc.encode(pg.content)));
+    pageIds.push(add({ head: `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${n2(ptW)} ${n2(ptH)}] /Resources << /XObject << ${formIds.map((f, i) => `/Fm${i} ${f} 0 R`).join(' ')} ${pm.map(([n, i]) => `/${n} ${i} 0 R`).join(' ')} >> >> /Contents ${cId} 0 R >>` }));
   }
   const all = [{ head: '<< /Type /Catalog /Pages 2 0 R >>' }, { head: `<< /Type /Pages /Kids [${pageIds.map((i) => i + ' 0 R').join(' ')}] /Count ${pageIds.length} >>` }, ...objs];
   const chunks = [enc.encode('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n')];
@@ -168,7 +232,7 @@ export async function pdfTiles(app, sets, dpi = 150) {
   });
   const xs = `xref\n0 ${all.length + 1}\n0000000000 65535 f \n${xref.map((x) => String(x).padStart(10, '0') + ' 00000 n \n').join('')}trailer\n<< /Size ${all.length + 1} /Root 1 0 R >>\nstartxref\n${off}\n%%EOF`;
   chunks.push(enc.encode(xs));
-  return { blob: new Blob(chunks, { type: 'application/pdf' }), pages: pages.length, rows, cols };
+  return { blob: new Blob(chunks, { type: 'application/pdf' }), pages: pages.length, rows, cols, paper: P.name };
 }
 
 // ───────── DXF (AAMA-style) ─────────

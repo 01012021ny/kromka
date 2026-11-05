@@ -79,7 +79,8 @@ export function patternSpec(g, M) {
     const legL = [...fL, ...bL];
     const all = outer(g);
     const band = byBase(g, ['Пояс'])[0];
-    const bandH = band ? bbox(band.pts).h : 0;
+    // высота пояса — по его концу (у контурного пояса габарит дуги намного больше ширины полосы)
+    const bandH = band ? namedLen([band], 'конец пояса') || bbox(band.pts).h : 0;
     add('waist', 'Пояс в расслабленном виде (полуобхват)', namedLen(all, 'пояс', true) / 2, 1, 'w');
     if (M) add('hip', 'Бёдра (полуобхват)', widthAt(all, M.y.hip) / 2, 1, 'w', M.y.hip);
     const crotch = Math.min(...namedEnds(fL, 'шаговый шов').filter((y) => y > (M ? M.y.knee : 40)));

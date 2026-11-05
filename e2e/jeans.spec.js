@@ -12,7 +12,7 @@ test('джинсы: основа из каталога → 3D без внутр�
       pocketing: g.pieces.filter((p) => p.name.startsWith('Мешковина')).every((p) => a.S.materials.find((m) => m.id === p.mat)?.presetId === 'pock'),
     };
   });
-  expect(info).toEqual({ pieces: 16, inner: 7, inSim: 9, pocketing: true });
+  expect(info).toEqual({ pieces: 17, inner: 8, inSim: 9, pocketing: true }); // клёш: контурный пояс + обтачка пояса
 
   // параметры силуэта в инспекторе; физика без NaN
   await expect(page.locator('#gp_kneeY')).toBeVisible();
@@ -26,7 +26,7 @@ test('джинсы: основа из каталога → 3D без внутр�
   const [pass] = await savedFiles(page, 1);
   expect(pass.name).toMatch(/^kromka-pasport-.+\.html$/);
   const html = pass.buf.toString('utf8');
-  for (const s of ['Мешковина передняя (лев.)', 'Гульфик', 'Задний карман (Задняя половинка (прав.))', 'Часовой карман', 'Пояс и шлёвки', 'J-строчку', 'сгиб, обтачка'])
+  for (const s of ['Мешковина передняя (лев.)', 'Гульфик', 'Задний карман (Задняя половинка (прав.))', 'Часовой карман', 'Пояс и шлёвки', 'J-строчку', 'Обтачка пояса', 'Контурный пояс'])
     expect(html, s).toContain(s);
 });
 
