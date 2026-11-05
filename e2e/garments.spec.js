@@ -70,3 +70,17 @@ test('обработка краёв: обтачка горловины, бейк
   await page.click('#lnDel');
   await expect.poll(() => page.evaluate((o) => window.__app.garment(o.g).pieces.filter((p) => p.lining).length, ids)).toBe(0);
 });
+
+test('узлы: лонгслив с воронкой и манжетами из каталога, стойка параметром', async ({ page }) => {
+  await openApp(page, '#local');
+  await page.click('[data-add=funnel]');
+  const g = await page.evaluate(() => { const g = window.__app.S.garments.find((x) => x.preset === 'funnel'); return { id: g.id, names: g.pieces.map((p) => p.name) }; });
+  expect(g.names).toEqual(expect.arrayContaining(['Воронка', 'Воронка (внутренняя)', 'Манжета (лев.)', 'Манжета (прав.)']));
+  await expect(page.locator('.steps-list')).toContainText('Воротник-воронка');
+  // переключить на стойку высотой 4 см
+  await page.locator('#gp_collar_n').fill('1'); await page.locator('#gp_collar_n').dispatchEvent('change');
+  await page.locator('#gp_collarH_n').fill('4'); await page.locator('#gp_collarH_n').dispatchEvent('change');
+  await expect.poll(() => page.evaluate((id) => window.__app.garment(id).pieces.some((p) => p.name === 'Стойка'), g.id)).toBe(true);
+  await page.waitForTimeout(1500);
+  expect(await page.evaluate(() => { const x = window.__app.sim.x; for (let i = 0; i < x.length; i++) if (!Number.isFinite(x[i])) return false; return true; })).toBe(true);
+});

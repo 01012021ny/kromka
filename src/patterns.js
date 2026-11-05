@@ -104,6 +104,8 @@ export const GEN_PARAMS = {
     ['neckB', 'Глубина горловины спинки', 1, 20, 0.5], ['armDrop', 'Углубление проймы', 0, 25, 0.5], ['hemCurve', 'Закругление низа', 0, 25, 0.5],
     ['asym', 'Асимметрия низа (лев/прав)', -45, 45, 1], ['flare', 'Расширение к низу', -6, 40, 0.5], ['waist', 'Прилегание по талии', 0, 10, 0.5],
     ['open', 'Распашной перед (0/1)', 0, 1, 1], ['overlap', 'Заход бортов', 0, 14, 0.5],
+    ['collar', 'Воротник: 0 — нет, 1 — стойка, 2 — воронка (горловина переда — не глубже 9 см)', 0, 2, 1], ['collarH', 'Высота воротника', 2, 30, 0.5],
+    ['cuffs', 'Манжеты (0/1)', 0, 1, 1], ['cuffH', 'Высота манжеты', 2, 20, 0.5],
   ],
   pants: [
     ['ease', 'Свобода по бёдрам', 0, 50, 1], ['rise', 'Посадка талии ±', -12, 8, 0.5], ['drop', 'Заниженная мотня', 0, 45, 0.5],
@@ -120,12 +122,13 @@ export const GEN_PARAMS = {
 };
 
 // значения новых параметров для изделий, созданных до их появления
-export const GEN_DEFAULTS = { pants: { kneeY: 0, hemBack: 0, jeans: 0, artKnee: 0, buttonFly: 0, contour: 0 } };
+export const GEN_DEFAULTS = { top: { collar: 0, collarH: 4, cuffs: 0, cuffH: 6 }, pants: { kneeY: 0, hemBack: 0, jeans: 0, artKnee: 0, buttonFly: 0, contour: 0 } };
 
 export const GARMENT_PRESETS = [
   { id: 'tee', cat: 'Верх', name: 'Футболка базовая', gen: 'top', layer: 1, mat: 'jer180', p: { ease: 10, len: 70, sleeve: 21, drop: 0, bicep: 6, cuff: 0, cuffEl: 0, neckW: 1, neckF: 8, neckB: 2, armDrop: 1, hemCurve: 0, asym: 0, flare: 1, waist: 0, open: 0, overlap: 0 } },
   { id: 'over', cat: 'Верх', name: 'Футболка оверсайз', gen: 'top', layer: 1, mat: 'jer260', p: { ease: 30, len: 74, sleeve: 27, drop: 8, bicep: 12, cuff: 6, cuffEl: 0, neckW: 1.5, neckF: 8, neckB: 2, armDrop: 6, hemCurve: 0, asym: 0, flare: 0, waist: 0, open: 0, overlap: 0 } },
   { id: 'long', cat: 'Верх', name: 'Лонгслив удлинённый, длинный рукав', gen: 'top', layer: 1, mat: 'vis180', p: { ease: 8, len: 92, sleeve: 76, drop: 0, bicep: 4, cuff: 0, cuffEl: 1, neckW: 2, neckF: 7, neckB: 2, armDrop: 1, hemCurve: 8, asym: 0, flare: 4, waist: 0, open: 0, overlap: 0 } },
+  { id: 'funnel', cat: 'Верх', name: 'Лонгслив с воронкой и длинными манжетами', gen: 'top', layer: 1, mat: 'jer260', p: { ease: 14, len: 78, sleeve: 80, drop: 3, bicep: 6, cuff: 0, cuffEl: 0, neckW: 1.5, neckF: 4, neckB: 2, armDrop: 2, hemCurve: 0, asym: 0, flare: 2, waist: 0, open: 0, overlap: 0, collar: 2, collarH: 16, cuffs: 1, cuffH: 12 } },
   { id: 'tank', cat: 'Верх', name: 'Майка с глубокой проймой', gen: 'top', layer: 1, mat: 'slub160', p: { ease: 8, len: 84, sleeve: 0, drop: -1, bicep: 0, cuff: 0, cuffEl: 0, neckW: 3, neckF: 14, neckB: 4, armDrop: 14, hemCurve: 4, asym: 0, flare: 4, waist: 0, open: 0, overlap: 0 } },
   { id: 'tunic', cat: 'Верх', name: 'Туника с асимметричным низом', gen: 'top', layer: 1, mat: 'gau110', p: { ease: 26, len: 98, sleeve: 30, drop: 7, bicep: 10, cuff: 8, cuffEl: 0, neckW: 2, neckF: 10, neckB: 2.5, armDrop: 5, hemCurve: 4, asym: 26, flare: 10, waist: 0, open: 0, overlap: 0 } },
   { id: 'coat', cat: 'Верх', name: 'Длинный распашной кардиган / пальто', gen: 'top', layer: 2, mat: 'boil450', p: { ease: 28, len: 112, sleeve: 66, drop: 5, bicep: 12, cuff: 8, cuffEl: 0, neckW: 2, neckF: 26, neckB: 2.5, armDrop: 6, hemCurve: 0, asym: 0, flare: 8, waist: 0, open: 1, overlap: 2 } },
@@ -177,31 +180,48 @@ function topBody(M, p, kind) {
   return { sx, ys, nw, yNB, fw, ya, hw, hemY, hemPts, side, arm, neckHalf, dF, yHem };
 }
 
-export function genTop(M, p) {
+// Кольцо-полоса (воротник, пояс): низ длиной L, верх длиной Lt, высота H. Lt < L — дуга с центром сверху (облегает),
+// Lt > L — центр снизу (раскрывается, как воронка). Возвращает точку (s — длина по низу от x = 0, h — высота) и описание дуги.
+function ringArc(L, Lt, H, y0) {
+  if (Math.abs(L - Lt) < 0.5) return { bp: (s, h) => [s, y0 + h], arc: null };
+  if (Lt < L) { const R = (L * H) / (L - Lt); return { bp: (s, h) => [(R - h) * Math.sin(s / R), y0 + R - (R - h) * Math.cos(s / R)], arc: { cx: 0, cy: y0 + R, R, y0, len: L, dir: 1 } }; }
+  const R = (L * H) / (Lt - L);
+  return { bp: (s, h) => [(R + h) * Math.sin(s / R), y0 - R + (R + h) * Math.cos(s / R)], arc: { cx: 0, cy: y0 - R, R, y0, len: L, dir: -1 } };
+}
+
+export function genTop(M, p0) {
+  const p = { ...GEN_DEFAULTS.top, ...p0 };
+  // воротник ставится на высокую горловину: глубокий вырез переда поднимаем до 9 см (стойку на V-вырез не притачать)
+  if (Math.round(p.collar || 0)) p.neckF = Math.min(p.neckF, 9);
   const pieces = [], seams = [];
   const F = topBody(M, p, 'front'), B = topBody(M, p, 'back');
   const shoulder = (G, s) => line([s * G.sx, G.ys], [s * G.nw, G.yNB], 1);
   const sleeveless = p.sleeve <= 0;
+  const collar = Math.round(p.collar || 0);
   const armName = sleeveless ? 'пройма' : 'пройма';
-  const edgesFull = (G) => [
-    { pts: G.hemPts, name: 'низ' },
-    { pts: G.side(1), name: 'бок' },
-    { pts: G.arm(1), name: armName, sa: sleeveless ? 0.8 : 1 },
-    { pts: shoulder(G, 1), name: 'плечо' },
-    { pts: [...G.neckHalf(1), ...G.neckHalf(-1).reverse().slice(1)], name: 'горловина' },
-    { pts: shoulder(G, -1).reverse(), name: 'плечо' },
-    { pts: G.arm(-1).reverse(), name: armName, sa: sleeveless ? 0.8 : 1 },
-    { pts: G.side(-1).reverse(), name: 'бок' },
+  // метки сторон: s1/a1/h1 — сторона +x (у переда — левая сторона модели, у спинки — правая), s2/a2/h2 — −x
+  const edgesFull = (G, splitNeck) => [
+    { pts: G.hemPts, name: 'низ', tag: 'hem' },
+    { pts: G.side(1), name: 'бок', tag: 's1' },
+    { pts: G.arm(1), name: armName, sa: sleeveless ? 0.8 : 1, tag: 'a1' },
+    { pts: shoulder(G, 1), name: 'плечо', tag: 'h1' },
+    ...(splitNeck
+      ? [{ pts: G.neckHalf(1), name: 'горловина', tag: 'neck1' }, { pts: G.neckHalf(-1).reverse(), name: 'горловина', tag: 'neck2' }]
+      : [{ pts: [...G.neckHalf(1), ...G.neckHalf(-1).reverse().slice(1)], name: 'горловина', tag: 'neck' }]),
+    { pts: shoulder(G, -1).reverse(), name: 'плечо', tag: 'h2' },
+    { pts: G.arm(-1).reverse(), name: armName, sa: sleeveless ? 0.8 : 1, tag: 'a2' },
+    { pts: G.side(-1).reverse(), name: 'бок', tag: 's2' },
   ];
-  // back
-  const back = buildPiece('Спинка', edgesFull(B), { place: { kind: 'torso', side: 'back' }, view: { x: B.hw * 2 + 12, y: 0 } });
-  const bE = back._edgeIds; // 0 hem,1 sideR,2 armR,3 shR,4 neck,5 shL,6 armL,7 sideL
-  let frontParts;
+  // спинка; у пуловера с воротником горловина спинки делится по середине — там сходятся концы воротника
+  const back = buildPiece('Спинка', edgesFull(B, collar && !p.open), { place: { kind: 'torso', side: 'back' }, view: { x: B.hw * 2 + 12, y: 0 } });
+  const bt = back._tags;
+  let frontParts, neckF = [];
   if (!p.open) {
-    const front = buildPiece('Перед', edgesFull(F), { place: { kind: 'torso', side: 'front' }, view: { x: 0, y: 0 } });
+    const front = buildPiece('Перед', edgesFull(F, false), { place: { kind: 'torso', side: 'front' }, view: { x: 0, y: 0 } });
     pieces.push(front, back);
-    const fE = front._edgeIds;
-    frontParts = { L: { piece: front, side: fE[1], arm: fE[2], sh: fE[3] }, R: { piece: front, side: fE[7], arm: fE[6], sh: fE[5] } };
+    const ft = front._tags;
+    frontParts = { L: { piece: front, side: ft.s1, arm: ft.a1, sh: ft.h1 }, R: { piece: front, side: ft.s2, arm: ft.a2, sh: ft.h2 } };
+    neckF = [{ piece: front, e: ft.neck }];
   } else {
     const ov = p.overlap;
     // model-left front: from centre front (x = -ov) to side (+x)
@@ -209,38 +229,93 @@ export function genTop(M, p) {
     const cfTop = [-ov, F.yNB - F.dF], cfBot = [-ov, F.hemY(-ov)];
     const hem = []; for (let i = 0; i <= 14; i++) { const x = lerp(-ov, F.hw, i / 14); hem.push([x, F.hemY(x)]); }
     const edgesL = [
-      { pts: hem, name: 'низ' },
-      { pts: F.side(1), name: 'бок' },
-      { pts: F.arm(1), name: 'пройма' },
-      { pts: shoulder(F, 1), name: 'плечо' },
-      { pts: ov > 0 ? [...neckL, cfTop] : neckL, name: 'горловина' },
-      { pts: [cfTop, cfBot], name: 'борт' },
+      { pts: hem, name: 'низ', tag: 'hem' },
+      { pts: F.side(1), name: 'бок', tag: 'side' },
+      { pts: F.arm(1), name: 'пройма', tag: 'arm' },
+      { pts: shoulder(F, 1), name: 'плечо', tag: 'sh' },
+      { pts: ov > 0 ? [...neckL, cfTop] : neckL, name: 'горловина', tag: 'neck' },
+      { pts: [cfTop, cfBot], name: 'борт', tag: 'cf' },
     ];
     const fl = buildPiece('Полочка левая', edgesL, { place: { kind: 'torso', side: 'front' }, view: { x: 4, y: 0 }, sym: false });
     const fr = buildPiece('Полочка правая', mirrorEdges(edgesL), { place: { kind: 'torso', side: 'front' }, view: { x: -4, y: 0 }, sym: false });
     pieces.push(fl, fr, back);
-    const lE = fl._edgeIds, rE = fr._edgeIds; // mirrored order reversed: rE = [борт, горловина, плечо, пройма, бок, низ]
-    frontParts = { L: { piece: fl, side: lE[1], arm: lE[2], sh: lE[3] }, R: { piece: fr, side: rE[4], arm: rE[3], sh: rE[2] } };
+    const lt = fl._tags, rt = fr._tags;
+    frontParts = { L: { piece: fl, side: lt.side, arm: lt.arm, sh: lt.sh }, R: { piece: fr, side: rt.side, arm: rt.arm, sh: rt.sh } };
+    neckF = [{ piece: fr, e: rt.neck }, { piece: fl, e: lt.neck }];
   }
-  const S = (a, b, name, order) => seams.push({ id: uid('s'), a, b, rev: null, name, order });
+  const S = (a, b, name, order, extra = {}) => seams.push({ id: uid('s'), a, b, rev: null, name, order, ...extra });
+  const stepLabels = {}, stepNotes = {};
   // model's left = front +x / back −x
-  S({ p: frontParts.L.piece.id, e: frontParts.L.sh }, { p: back.id, e: bE[5] }, 'Плечевой шов (лев.)', 1);
-  S({ p: frontParts.R.piece.id, e: frontParts.R.sh }, { p: back.id, e: bE[3] }, 'Плечевой шов (прав.)', 1);
+  S({ p: frontParts.L.piece.id, e: frontParts.L.sh }, { p: back.id, e: bt.h2 }, 'Плечевой шов (лев.)', 1);
+  S({ p: frontParts.R.piece.id, e: frontParts.R.sh }, { p: back.id, e: bt.h1 }, 'Плечевой шов (прав.)', 1);
   if (!sleeveless) {
-    const sl = genSleeve(M, p, edgeLenOf(frontParts.L.piece, frontParts.L.arm), edgeLenOf(back, bE[6]));
-    for (const [arm, fp, bArm, vx] of [['L', frontParts.L, bE[6], -1], ['R', frontParts.R, bE[2], 1]]) {
+    const cuffH = p.cuffs ? clamp(p.cuffH, 2, 20) : 0;
+    const sl = genSleeve(M, { ...p, sleeve: p.cuffs ? Math.max(8, p.sleeve - cuffH) : p.sleeve }, edgeLenOf(frontParts.L.piece, frontParts.L.arm), edgeLenOf(back, bt.a2));
+    if (cuffH) Object.assign(sl.edges[0], { name: 'шов манжеты', sa: 1 });
+    for (const [arm, fp, bArm, vx] of [['L', frontParts.L, bt.a2, -1], ['R', frontParts.R, bt.a1, 1]]) {
       const s = buildPiece(arm === 'L' ? 'Рукав левый' : 'Рукав правый', sl.edges, { place: { kind: 'arm', limb: arm }, view: { x: vx < 0 ? -(F.hw + sl.B / 2 + 10) : B.hw * 3 + sl.B / 2 + 22, y: F.ys }, sym: true });
       const e = s._edgeIds; // 0 cuff,1 seamR,2 capF,3 capB,4 seamL
-      if (p.cuffEl) s.meta[e[0]].gather = clamp((M.wrist + 7) / sl.cw, 0.45, 1);
+      if (p.cuffEl && !cuffH) s.meta[e[0]].gather = clamp((M.wrist + 7) / sl.cw, 0.45, 1);
       pieces.push(s);
-      S({ p: s.id, e: e[2] }, { p: fp.piece.id, e: fp.arm }, `Втачивание рукава, перед (${arm === 'L' ? 'лев.' : 'прав.'})`, 3);
-      S({ p: s.id, e: e[3] }, { p: back.id, e: bArm }, `Втачивание рукава, спинка (${arm === 'L' ? 'лев.' : 'прав.'})`, 3);
-      S({ p: s.id, e: e[1] }, { p: s.id, e: e[4] }, `Шов рукава (${arm === 'L' ? 'лев.' : 'прав.'})`, 4);
+      const side = arm === 'L' ? 'лев.' : 'прав.';
+      S({ p: s.id, e: e[2] }, { p: fp.piece.id, e: fp.arm }, `Втачивание рукава, перед (${side})`, 3);
+      S({ p: s.id, e: e[3] }, { p: back.id, e: bArm }, `Втачивание рукава, спинка (${side})`, 3);
+      S({ p: s.id, e: e[1] }, { p: s.id, e: e[4] }, `Шов рукава (${side})`, 4);
+      if (cuffH) {
+        // манжета: полоса шириной низа рукава, сложена вдвое по низу (обтачка = высота), концы — шов по линии шва рукава
+        const y1 = -sl.L, y0c = y1 - cuffH, w = sl.cw;
+        const cuff = buildPiece(`Манжета (${side})`, [
+          { pts: [[-w / 2, y0c], [w / 2, y0c]], name: 'низ рукава', sa: cuffH + 1, fold: true, tag: 'fold' },
+          { pts: [[w / 2, y0c], [w / 2, y1]], name: 'шов манжеты', sa: 1, tag: 'e1' },
+          { pts: [[w / 2, y1], [-w / 2, y1]], name: 'шов манжеты', sa: 1, tag: 'top' },
+          { pts: [[-w / 2, y1], [-w / 2, y0c]], name: 'шов манжеты', sa: 1, tag: 'e2' },
+        ], { place: { kind: 'arm', limb: arm }, sym: true });
+        if (p.cuffEl) cuff.meta[cuff._tags.fold].gather = clamp((M.wrist + 7) / w, 0.45, 1);
+        pieces.push(cuff);
+        S({ p: cuff.id, e: cuff._tags.e1 }, { p: cuff.id, e: cuff._tags.e2 }, `Манжета: стачать в кольцо (${side})`, 6);
+        S({ p: cuff.id, e: cuff._tags.top }, { p: s.id, e: e[0] }, `Манжета: притачать к рукаву (${side})`, 6);
+      }
     }
+    if (cuffH) { stepLabels[6] = 'Манжеты'; stepNotes[6] = 'Стачать манжету в кольцо, сложить вдвое по линии сгиба изнанкой внутрь, вложить в рукав и притачать, совмещая шов манжеты со швом рукава; припуск обметать, заутюжить к рукаву.'; }
   }
-  S({ p: frontParts.L.piece.id, e: frontParts.L.side }, { p: back.id, e: bE[7] }, 'Боковой шов (лев.)', sleeveless ? 2 : 4);
-  S({ p: frontParts.R.piece.id, e: frontParts.R.side }, { p: back.id, e: bE[1] }, 'Боковой шов (прав.)', sleeveless ? 2 : 4);
-  return { pieces, seams };
+  S({ p: frontParts.L.piece.id, e: frontParts.L.side }, { p: back.id, e: bt.s2 }, 'Боковой шов (лев.)', sleeveless ? 2 : 4);
+  S({ p: frontParts.R.piece.id, e: frontParts.R.side }, { p: back.id, e: bt.s1 }, 'Боковой шов (прав.)', sleeveless ? 2 : 4);
+
+  // воротник: 1 — стойка (верх на 8 % короче — облегает шею), 2 — воронка (верх на 18 % длиннее — раскрывается)
+  if (collar) {
+    const H = clamp(p.collarH, 2, 30);
+    // участки горловины по кругу: у пуловера x = 0 — середина переда, концы — по середине спинки; у распашного — наоборот
+    const parts = p.open
+      ? [{ ...neckF[0], t: 'cR' }, { piece: back, e: bt.neck, t: 'cB' }, { ...neckF[1], t: 'cL' }]
+      : [{ piece: back, e: bt.neck1, t: 'cB1' }, { ...neckF[0], t: 'cF' }, { piece: back, e: bt.neck2, t: 'cB2' }];
+    const lens = parts.map((q) => edgeLenOf(q.piece, q.e)), L = lens.reduce((a, v) => a + v, 0);
+    const Lt = L * (collar === 1 ? 0.92 : 1.18);
+    const y0 = F.yNB - 0.5;
+    const { bp, arc } = ringArc(L, Lt, H, y0);
+    const along = (s0, s1, h, n) => Array.from({ length: n + 1 }, (_, i) => bp(lerp(s0, s1, i / n), h));
+    const xs = [-L / 2]; for (const l of lens) xs.push(xs[xs.length - 1] + l);
+    const mk = (name, outer) => buildPiece(name, [
+      ...parts.map((q, i) => ({ pts: along(xs[i], xs[i + 1], 0, Math.max(2, Math.round(lens[i]))), name: outer ? 'шов воротника' : 'край', sa: 1, tag: q.t })),
+      { pts: [bp(L / 2, 0), bp(L / 2, H)], name: p.open ? 'конец воротника' : 'шов воротника', sa: 1, tag: 'end2' },
+      { pts: along(L / 2, -L / 2, H, 40), name: 'край воротника', sa: 1, tag: 'top' },
+      { pts: [bp(-L / 2, H), bp(-L / 2, 0)], name: p.open ? 'конец воротника' : 'шов воротника', sa: 1, tag: 'end1' },
+    ], { place: { kind: 'neck', zero: p.open ? 'cb' : 'cf', ...(arc ? { arc } : {}) }, sym: true });
+    const name = collar === 1 ? 'Стойка' : 'Воронка';
+    const co = mk(name, true), ci = mk(name + ' (внутренняя)', false);
+    ci.inner = true; ci.place = { kind: 'free' };
+    pieces.push(co, ci);
+    for (const q of parts) S({ p: co.id, e: co._tags[q.t] }, { p: q.piece.id, e: q.e }, `${name}: к горловине ${q.piece.name === 'Спинка' ? 'спинки' : q.piece.name === 'Перед' ? 'переда' : '(' + q.piece.name.toLowerCase() + ')'}`, 5);
+    S({ p: co.id, e: co._tags.top }, { p: ci.id, e: ci._tags.top }, `${name}: верх с внутренней частью`, 5);
+    if (!p.open) {
+      S({ p: co.id, e: co._tags.end1 }, { p: co.id, e: co._tags.end2 }, `${name}: шов по середине спинки`, 5);
+      S({ p: ci.id, e: ci._tags.end1 }, { p: ci.id, e: ci._tags.end2 }, `${name} (внутренняя): шов по середине спинки`, 5);
+    }
+    stepLabels[5] = name === 'Стойка' ? 'Воротник-стойка' : 'Воротник-воронка';
+    stepNotes[5] = (p.open ? 'Наружную и внутреннюю части стачать по верху и концам, вывернуть, приутюжить. ' : 'Обе части стачать в кольцо по середине спинки, затем по верху, вывернуть, приутюжить. ')
+      + 'Наружную часть притачать к горловине, совмещая середины и плечевые швы; припуск — в воротник, край внутренней части подогнуть и настрочить по шву притачивания.'
+      + (collar === 2 ? ' Воронку из мягкой ткани продублировать лёгкой прокладкой — иначе не держит форму.' : '');
+  }
+  return { pieces: tidy(pieces), seams, ...(Object.keys(stepLabels).length ? { stepLabels, stepNotes } : {}) };
 }
 function edgeLenOf(piece, cid) { return edgeLen(piece, edgeK(piece, cid)); }
 
@@ -266,7 +341,7 @@ function genSleeve(M, p, ahF, ahB) {
     { pts: capB(B, ch), name: 'окат (спинка)' },
     { pts: [[-B / 2, -ch], [-cw / 2, bottom]], name: 'шов рукава' },
   ];
-  return { edges, B, ch, cw };
+  return { edges, B, ch, cw, L };
 }
 
 // ломаная, идущая по высоте: разрезать на уровне y → [до, после] (точка разреза входит в обе части)

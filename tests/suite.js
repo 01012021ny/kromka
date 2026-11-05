@@ -28,7 +28,7 @@ const make = (id) => {
 const drape = (gs, mats, steps = 300) => { const sim = new Sim(body); sim.build(gs, mats, 2.6); for (let f = 0; f < steps; f++) sim.step(1 / 60); return sim; };
 
 console.log('Физика: изделие держится на теле');
-const holdY = { tee: 140, long: 140, tank: 140, tunic: 140, coat: 140, over: 140, trou: 96, dropc: 95, skirt: 95, snood: 128, jeans: 98, flare: 97, stack: 97 };
+const holdY = { tee: 140, long: 140, tank: 140, tunic: 140, coat: 140, over: 140, trou: 96, dropc: 95, skirt: 95, snood: 128, jeans: 98, flare: 97, stack: 97, funnel: 150 };
 for (const id of Object.keys(holdY)) {
   const { g, mat } = make(id);
   const sim = drape([g], { [mat.id]: mat });
@@ -230,6 +230,51 @@ console.log('Обтачка, бейка, подкладка');
   ok('подкладка: второй раз — отказ, убрать — убирается', !!addLining(c, lin.id).error && removeLining(c) === outer && c.seams.length === s0);
   const steps = sewingSteps({ ...g, extraSteps: g.extraSteps });
   ok('порядок пошива: шаг «Обтачки и бейки» с пояснением', steps.some((st) => st.title === 'Обтачки и бейки' && st.note && st.seams.length === 2));
+}
+
+console.log('Узлы: стойка, воронка, манжеты');
+{
+  const mk = (id, extra) => {
+    const pr = GARMENT_PRESETS.find((p) => p.id === id), params = { ...pr.p, ...extra }, mat = makeMaterial(pr.mat);
+    const out = GENERATORS.top(body.m, params);
+    const g = { id: id + 'c', name: pr.name, gen: 'top', params, pieces: out.pieces, seams: out.seams, layer: 1, grading: defaultGrading('M') };
+    for (const p of g.pieces) { p.mat = mat.id; p.base = p.name; }
+    for (const s of g.seams) s.rev = seamRev(g, s, body);
+    return { g, mat, out };
+  };
+  for (const [id, extra, nm] of [['tee', { collar: 1, collarH: 4 }, 'Стойка'], ['funnel', {}, 'Воронка'], ['coat', { collar: 2, collarH: 12 }, 'Воронка']]) {
+    const { g, mat } = mk(id, extra);
+    const co = g.pieces.find((p) => p.name === nm), ci = g.pieces.find((p) => p.name === nm + ' (внутренняя)');
+    const att = g.seams.filter((s) => s.name.startsWith(nm + ': к горловине'));
+    const worst = Math.max(...g.seams.filter((s) => !s.name.includes('Втачивание')).map((s) => Math.abs(seamLengths(g, s).diff)));
+    ok(`${id}: ${nm.toLowerCase()} — две части, притачана ко всей горловине, швы равны`, co && ci && ci.inner && att.length === 3 && worst < 0.3, `макс. Δ ${worst.toFixed(2)}`);
+    const sim = drape([g], { [mat.id]: mat }, 360);
+    let gap = 0; for (let c = 0; c < sim.sw.length; c += 2) { const a = 3 * sim.sw[c], b = 3 * sim.sw[c + 1]; gap = Math.max(gap, Math.hypot(sim.x[a] - sim.x[b], sim.x[a + 1] - sim.x[b + 1], sim.x[a + 2] - sim.x[b + 2])); }
+    const r = sim.pieces.find((q) => q.piece.name === nm); let top = -1e9; for (let i = r.off; i < r.off + r.n; i++) top = Math.max(top, sim.x[3 * i + 1]);
+    ok(`${id}: ${nm.toLowerCase()} в 3D сшита и стоит над горловиной`, gap < 2 && top > body.m.y.neckBase + 2, `зазор ${gap.toFixed(2)} см, верх ${top.toFixed(1)}`);
+  }
+  {
+    const { g } = mk('tee', { collar: 1 }), { g: g2 } = mk('tee', { collar: 2 });
+    const len = (gg, n) => {
+      const p = gg.pieces.find((q) => q.name === n);
+      const top = p.corners.reduce((a, c, k) => a + (p.meta[c.id].name === 'край воротника' ? edgeLen(p, k) : 0), 0);
+      const bot = gg.seams.filter((s) => s.name.startsWith(n + ': к горловине')).reduce((a, s) => a + edgeLen(p, edgeK(p, s.a.p === p.id ? s.a.e : s.b.e)), 0);
+      return [top, bot];
+    };
+    const [st, sb] = len(g, 'Стойка'), [ft, fb] = len(g2, 'Воронка');
+    ok('стойка облегает (верх короче низа), воронка раскрывается (верх длиннее)', st < sb - 1 && ft > fb + 3, `стойка ${st.toFixed(1)}/${sb.toFixed(1)}, воронка ${ft.toFixed(1)}/${fb.toFixed(1)}`);
+  }
+  {
+    const { g, mat } = mk('long', { cuffs: 1, cuffH: 6 });
+    const cuffs = g.pieces.filter((p) => p.name.startsWith('Манжета'));
+    const worst = Math.max(...g.seams.filter((s) => !s.name.includes('Втачивание')).map((s) => Math.abs(seamLengths(g, s).diff)));
+    ok('манжеты: две, сложены по низу, притачаны к рукавам', cuffs.length === 2 && cuffs.every((c) => c.corners.some((k) => c.meta[k.id].fold)) && g.seams.filter((s) => s.name.startsWith('Манжета: притачать')).length === 2 && worst < 0.3);
+    const sl = g.pieces.find((p) => p.name === 'Рукав левый'), c = cuffs[0];
+    ok('манжеты: общая длина рукава не меняется', Math.abs((bbox(sl.pts).h + bbox(c.pts).h) - bbox(mk('long', {}).g.pieces.find((p) => p.name === 'Рукав левый').pts).h) < 0.5);
+    const sim = drape([g], { [mat.id]: mat }, 240);
+    let nan = 0; for (let i = 0; i < sim.N * 3; i++) if (!isFinite(sim.x[i])) nan++;
+    ok('манжеты: 3D без NaN', nan === 0);
+  }
 }
 
 console.log('Образец: усадка и калибровка');

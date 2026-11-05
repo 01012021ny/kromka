@@ -161,6 +161,13 @@ export function placementCtx(garment, body, vis) {
   return ctx;
 }
 
+// точка дуговой полосы (контурный пояс, стойка, воронка) → [длина по низу от середины, высота на теле]
+function arcST(arc, x, y) {
+  const dx = x - arc.cx;
+  if ((arc.dir ?? 1) > 0) { const dy = arc.cy - y; return [Math.atan2(dx, dy) * arc.R, arc.y0 + arc.R - Math.hypot(dx, dy)]; }
+  const dy = y - arc.cy; return [Math.atan2(dx, dy) * arc.R, arc.y0 + Math.hypot(dx, dy) - arc.R];
+}
+
 export function placePoint(piece, x, y, ctx, body, out) {
   const pl = piece.place;
   if (pl.kind === 'torso' && ctx.torso) {
@@ -200,14 +207,18 @@ export function placePoint(piece, x, y, ctx, body, out) {
   } else if (pl.kind === 'band' && ctx.band?.[piece.id]) {
     const { A, B, map, xc, arc } = ctx.band[piece.id];
     let s = x - xc, yy = y;
-    if (arc) { const dx = x - arc.cx, dy = arc.cy - y, r = Math.hypot(dx, dy); s = Math.atan2(dx, dy) * arc.R; yy = arc.y0 + arc.R - r; }
+    if (arc) [s, yy] = arcST(arc, x, y);
     const th = map(s);
     out[0] = -A * Math.sin(th); out[1] = yy; out[2] = -B * Math.cos(th);
   } else if (pl.kind === 'neck') {
-    const w = bbox(piece.pts).w;
-    const R = Math.max(ctx.neckR + 3, w / (2 * Math.PI));
-    const th = x / R;
-    out[0] = R * Math.sin(th); out[1] = y; out[2] = -1.5 + R * Math.cos(th);
+    // снуд — полоса вокруг шеи; воротник — кольцо по линии горловины (zero: 'cf' — x = 0 на середине переда, 'cb' — спинки)
+    let s = x, yy = y, len = bbox(piece.pts).w;
+    if (pl.arc) { [s, yy] = arcST(pl.arc, x, y); len = pl.arc.len; }
+    // воротник — замкнутое кольцо ровно своей длины (иначе концы не сойдутся по середине и шов «перекрутится»)
+    const R = pl.zero ? Math.max(len / (2 * Math.PI), body.m.neck / (2 * Math.PI) + 0.8) : Math.max(ctx.neckR + 3, len / (2 * Math.PI));
+    // от середины спинки отрицательное s — к правой стороне модели (мир −x), поэтому угол идёт в обратную сторону
+    const th = pl.zero === 'cb' ? Math.PI - s / R : s / R;
+    out[0] = R * Math.sin(th); out[1] = yy; out[2] = -1.5 + R * Math.cos(th);
   } else {
     out[0] = x; out[1] = y; out[2] = 30;
   }
