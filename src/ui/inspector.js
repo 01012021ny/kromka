@@ -193,7 +193,7 @@ function inspAcc(app, R, a) {
 
 export function deleteSelected(app, force) {
   const p = app.selPiece();
-  if (!p) return;
+  if (!p) { const g = app.sel.g && app.garment(app.sel.g); if (g) app.removeGarment(g); return; } // выбрано изделие — удаляем целиком
   const g = app.garmentOf(p);
   if (app.sel.overlay && !force) { app.commit('Удалить накладку'); p.overlays = p.overlays.filter((o) => o.id !== app.sel.overlay); app.select({ p: p.id }); app.changed({ tex: [p.id], layout: true }); return; }
   if (app.sel.print && !force) { app.commit('Удалить принт'); p.prints = p.prints.filter((o) => o.id !== app.sel.print); app.select({ p: p.id }); app.changed({ tex: [p.id] }); return; }

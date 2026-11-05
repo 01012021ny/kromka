@@ -246,7 +246,12 @@ app.regenerate = (g, commit = true) => {
   allTextures(); rebuildSim(true); scheduleLayout(); UI.renderTree(app); editor.dirty = true; autosave();
 };
 app.regenDebounced = debounce((g) => app.regenerate(g, false), 160);
-app.removeGarment = (g) => { app.commit('Удалить изделие'); S.garments = S.garments.filter((x) => x !== g); app.select({}); rebuildSim(); scheduleLayout(); UI.renderLeft(app); autosave(); };
+app.removeGarment = (g) => {
+  app.commit('Удалить изделие');
+  S.garments = S.garments.filter((x) => x !== g);
+  app.select({}); rebuildSim(); scheduleLayout(); UI.renderLeft(app); editor.dirty = true; autosave();
+  app.toast(`Удалено целиком: ${g.name} (${g.pieces.length} дет.)`, '', { label: 'Вернуть', fn: () => app.undo() });
+};
 app.addSeam = (g, a, b) => {
   app.commit('Новый шов');
   g.seams = g.seams.filter((s) => !((s.a.p === a.p && s.a.e === a.e) || (s.b.p === a.p && s.b.e === a.e) || (s.a.p === b.p && s.a.e === b.e) || (s.b.p === b.p && s.b.e === b.e)));
@@ -422,10 +427,17 @@ document.getElementById('fileProj').addEventListener('change', (e) => {
 
 // ───────── toast ─────────
 let toastT;
-app.toast = (msg, kind = '') => {
+// action: { label, fn } — кнопка в сообщении (например «Вернуть» после удаления); такое сообщение висит дольше
+app.toast = (msg, kind = '', action = null) => {
   const el = document.getElementById('toast');
-  el.textContent = msg; el.className = 'show ' + kind;
-  clearTimeout(toastT); toastT = setTimeout(() => { el.className = ''; }, 2600);
+  el.textContent = msg; el.className = 'show ' + kind + (action ? ' act' : '');
+  if (action) {
+    const b = document.createElement('button');
+    b.className = 'sm'; b.textContent = action.label;
+    b.onclick = () => { el.className = ''; action.fn(); };
+    el.append(' ', b);
+  }
+  clearTimeout(toastT); toastT = setTimeout(() => { el.className = ''; }, action ? 6000 : 2600);
 };
 
 // ───────── boot ─────────
