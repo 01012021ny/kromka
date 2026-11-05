@@ -4,7 +4,7 @@ test('все вкладки, инспекторы, справка и вид ра
   await openApp(page);
   const left = page.locator('#left'), right = page.locator('#right');
 
-  for (const [tab, title] of [['body', 'Манекен'], ['garments', 'Изделия'], ['materials', 'Ткани проекта'], ['details', 'Детали и слои'], ['acc', 'Обувь и аксессуары'], ['layout', 'Раскладка и отходы']]) {
+  for (const [tab, title] of [['body', 'Манекен'], ['garments', 'Библиотека лекал'], ['materials', 'Ткани проекта'], ['details', 'Детали и слои'], ['acc', 'Обувь и аксессуары'], ['layout', 'Раскладка и отходы']]) {
     await page.click(`#steps [data-tab=${tab}]`);
     await expect(left.locator('h2').first()).toHaveText(title);
     await expect(page.locator(`#steps [data-tab=${tab}]`)).toHaveClass(/on/);

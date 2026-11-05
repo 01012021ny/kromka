@@ -3,6 +3,7 @@
 // молния, пуговицы болт-фронта), нитки и минуты пошива по длинам швов. Цены и нормы — ориентиры, их можно менять.
 import { nestAll } from './layout.js';
 import { seamLengths, edgeLen } from './patterns.js';
+import { zipList, zipLabel } from './hardware.js';
 
 /** ориентировочные цены фурнитуры, ₽ за шт. */
 export const TRIM_PRICE = { button: 25, snap: 15, eyelet: 6, rivet: 6, zipper: 90 };
@@ -25,8 +26,10 @@ export function garmentCost(g, mats, opt = {}) {
   const cnt = {};
   /** @type {Record<string, string>} */
   const notes = {};
-  for (const p of pieces) for (const h of p.hardware || []) cnt[h.type] = (cnt[h.type] || 0) + 1;
+  for (const p of pieces) for (const h of p.hardware || []) if (!h.zipOf) cnt[h.type] = (cnt[h.type] || 0) + 1; // бегунок — часть молнии
   for (const t of g.trims || []) { cnt[t.type] = (cnt[t.type] || 0) + t.n; if (t.note) notes[t.type] = t.note; }
+  const zips = zipList(g);
+  if (zips.length) { cnt.zipper = (cnt.zipper || 0) + zips.length; notes.zipper = [notes.zipper, ...zips.map(zipLabel)].filter(Boolean).join('; '); }
   const price = { ...TRIM_PRICE, ...(opt.trimPrice || {}) };
   const trims = Object.entries(cnt).map(([type, n]) => ({ type, name: TRIM_NAME[type] || type, n, note: notes[type] || '', rub: n * (price[type] || 0) }));
   // швы, открытые края, минуты
@@ -46,7 +49,8 @@ export function garmentCost(g, mats, opt = {}) {
     { name: `Швы: ${nSeams} шт., ${Math.round(seamCm)} см`, min: nSeams * 1.5 + seamCm / 18 },
     { name: `Края: подгибка, обметка ${Math.round(edgeCm)} см`, min: edgeCm / 30 },
     { name: `Накладки: ${nOver} шт.`, min: nOver * 6 },
-    { name: `Фурнитура: ${nHw} шт.`, min: nHw * 0.8 },
+    { name: `Фурнитура: ${nHw - zips.length} шт.`, min: (nHw - zips.length) * 0.8 },
+    { name: `Молнии: ${zips.length} шт.`, min: zips.reduce((a, z) => a + 8 + z.len / 10, 0) },
     { name: 'ВТО и контроль', min: 10 },
   ].filter((w) => w.min > 0);
   const minutes = work.reduce((a, w) => a + w.min, 0);

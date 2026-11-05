@@ -12,7 +12,9 @@ import { patternSpec, sampleShrink, compoundShrink } from '../src/spec.js';
 import { garmentCost, stockFit } from '../src/cost.js';
 import { addFacing, addBinding, addLining, removeLining } from '../src/finish.js';
 import { makeAcc, buildAccessory, shoeShape } from '../src/accessories.js';
-import { bbox } from '../src/util.js';
+import { bbox, inside as inPoly, polyLen } from '../src/util.js';
+import { LIBRARY, OUTFITS, DESIGNERS, findItem, searchLibrary, facets, applyDecor } from '../src/library.js';
+import { addDecorZip, setSeamZip, zipEdges, zipPartner, hardwareAlong, zipList, pruneZipPulls, removeStroke } from '../src/hardware.js';
 
 let pass = 0, fail = 0;
 const ok = (name, cond, info = '') => { if (cond) { pass++; console.log('  ✓', name, info); } else { fail++; console.log('  ✗', name, info); } };
@@ -313,6 +315,101 @@ console.log('Образец: усадка и калибровка');
   const sc90 = shrinkScale({ ...sq, grain: 90 }, { shrink: [5, 2] });
   ok('усадка следует за долевой нитью детали', Math.abs(bbox(sc90.pts).w - 10 / 0.95) < 1e-6, `${bbox(sc90.pts).w.toFixed(3)}`);
   ok('обхват манекена по высоте', Math.abs(body.girthAt(body.m.y.waist) - body.m.waist) < 2.5 && body.girthAt(body.m.y.hip) > body.girthAt(body.m.y.waist), `${body.girthAt(body.m.y.waist).toFixed(1)} / ${body.m.waist.toFixed(1)}`);
+}
+
+console.log('Библиотека лекал: карточки, поиск, образы');
+{
+  const makeLib = (it) => {
+    const mat = makeMaterial(it.mat);
+    const out = GENERATORS[it.gen](body.m, { ...it.p });
+    const g = { id: it.id, name: it.name, gen: it.gen, preset: it.id, params: { ...it.p }, pieces: out.pieces, seams: out.seams, layer: it.layer, grading: defaultGrading('M') };
+    for (const p of g.pieces) { p.mat = mat.id; p.base = p.name; }
+    if (it.decor) applyDecor(g, it.decor);
+    for (const sm of g.seams) sm.rev = seamRev(g, sm, body);
+    return { g, mat };
+  };
+  let bad = [];
+  for (const it of LIBRARY) {
+    try {
+      const { g } = makeLib(it);
+      const broken = g.pieces.some((p) => p.pts.length < 3 || p.pts.some(([x, y]) => !isFinite(x) || !isFinite(y)) || pieceArea(p) <= 0);
+      if (broken || !g.seams.length && it.gen !== 'snood') bad.push(it.id);
+    } catch (e) { bad.push(it.id + ': ' + e.message); }
+  }
+  ok(`все ${LIBRARY.length} карточек строятся по меркам`, !bad.length, bad.join(', '));
+  ok('у карточек есть фасеты и ассоциации — с известными дизайнерами', LIBRARY.every((it) => it.cat && it.level >= 1 && it.level <= 3 && (it.style || []).every((s) => DESIGNERS.some((d) => d.id === s))));
+  ok('образы ссылаются на существующие карточки', OUTFITS.every((o) => o.items.every((id) => findItem(id))) && OUTFITS.length >= 6);
+  const rick = searchLibrary('оуэнс');
+  ok('поиск по кириллическому имени дизайнера', rick.length >= 5 && rick.every((it) => it.style.includes('rick')), `${rick.length} шт.`);
+  const lf = searchLibrary('кожа клёш');
+  ok('поиск по нескольким словам — все слова', lf.some((it) => it.id === 'L-lflare') && lf.every((it) => /кож/.test(it.mat === 'lamb06' ? 'кожа' : JSON.stringify(it))), lf.map((x) => x.id).join(','));
+  const jf = searchLibrary('', { cat: ['Джинсы'], style: ['balmain', 'n9'] });
+  ok('фасеты: внутри «или», между «и»', jf.length >= 2 && jf.every((it) => it.cat === 'Джинсы' && it.style.some((s) => s === 'balmain' || s === 'n9')), jf.map((x) => x.id).join(','));
+  ok('чипы фасетов с количеством', facets().style.length >= 10 && facets().cat.every(([, n]) => n > 0));
+  // детали карточек
+  const { g: moto, mat: lam } = makeLib(findItem('L-moto'));
+  const zs = moto.seams.filter((s) => s.zip);
+  ok('косуха: разъёмная молния по бортам — шов-застёжка', zs.length === 1 && zs[0].closure && zs[0].zip.open && zs[0].rev != null, zs.map((s) => s.name).join());
+  ok('косуха: декоративные молнии у манжет на обоих рукавах', moto.pieces.filter((p) => p.place.kind === 'arm' && p.strokes.some((s) => s.mode === 'zip')).length === 2);
+  const zl = zipList(moto);
+  ok('молнии в списке: 1 рабочая + 2 декоративные', zl.length === 3 && zl.some((z) => z.open && z.len > 30), zl.map((z) => Math.round(z.len)).join('/'));
+  const mc = garmentCost(moto, { [lam.id]: lam });
+  const zt = mc.trims.find((t) => t.type === 'zipper');
+  ok('себестоимость: молнии считаются целиком, бегунки — нет', zt && zt.n === 3 && /разъёмная/.test(zt.note) && mc.work.some((w) => /Молнии/.test(w.name)), zt ? `${zt.n} шт. · ${zt.note}` : '');
+  ok('шаг пошива «Молнии»', sewingSteps(moto).some((st) => st.title === 'Молнии' && st.seams.some((x) => x.zip)));
+  {
+    const sim = drape([moto], { [lam.id]: lam }, 360);
+    let ymax = -1e9; for (let i = 0; i < sim.N; i++) ymax = Math.max(ymax, sim.x[3 * i + 1]);
+    const L = moto.pieces.find((p) => p.name === 'Полочка левая'), R = moto.pieces.find((p) => p.name === 'Полочка правая');
+    const rl = sim.pieces.find((r) => r.piece === L), rr = sim.pieces.find((r) => r.piece === R);
+    // середина бортов после посадки: молния застёгнута — борта рядом
+    const mid = (rec, p) => { const e = edgePts(p, edgeK(p, p.corners.find((c) => p.meta[c.id].name === 'борт').id)); const q = e[Math.floor(e.length / 2)]; let bi = 0, bd = 1e9; rec.mesh.v2.forEach((v, i) => { const d = (v[0] - q[0]) ** 2 + (v[1] - q[1]) ** 2; if (d < bd) { bd = d; bi = i; } }); const k = (rec.off + bi) * 3; return [sim.x[k], sim.x[k + 1], sim.x[k + 2]]; };
+    const a = rl && mid(rl, L), b = rr && mid(rr, R), gap = a && b ? Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) : 99;
+    ok('косуха в 3D: держится на плечах, молния застёгнута', ymax > 140 && gap < 1.5, `верх ${ymax.toFixed(0)}, борта ${gap.toFixed(2)} см`);
+  }
+  const { g: vest } = makeLib(findItem('L-vest'));
+  const eye = vest.pieces.flatMap((p) => p.hardware.filter((h) => h.type === 'eyelet').map((h) => ({ h, p })));
+  ok('жилет: люверсы рядами по бокам переда и спинки, внутри деталей', eye.length >= 16 && eye.every(({ h, p }) => inPoly([h.x, h.y], p.pts)), `${eye.length} шт.`);
+  const { g: moh } = makeLib(findItem('L-mohair'));
+  ok('мохер: сырые края низа и рукавов', moh.pieces.filter((p) => p.corners.some((c) => p.meta[c.id].raw)).length >= 4);
+  const { g: cargo } = makeLib(findItem('L-cargo'));
+  ok('карго: накладные карманы на обеих передних половинках', cargo.pieces.filter((p) => p.overlays.length).length === 2);
+  for (const id of ['L-harem', 'L-lflare']) {
+    const { g, mat } = makeLib(findItem(id));
+    const sim = drape([g], { [mat.id]: mat });
+    let ymax = -1e9, nan = 0; for (let i = 0; i < sim.N; i++) { const y = sim.x[3 * i + 1]; if (!isFinite(y)) nan++; ymax = Math.max(ymax, y); }
+    ok(`${id}: держится на талии`, ymax > 92 && !nan, `верх ${ymax.toFixed(0)}`);
+  }
+}
+
+console.log('Молнии и фурнитура рядами');
+{
+  const { g, mat } = make('skirt');
+  const f = g.pieces[0], side = f.corners.find((c) => f.meta[c.id].name === 'бок').id;
+  const n = hardwareAlong(f, side, { type: 'rivet', step: 4, inset: 1.5 });
+  const L = edgeLen(f, edgeK(f, side));
+  ok('ряд вдоль края: число по шагу, все внутри детали', n === Math.floor((L - 4) / 4 + 1e-6) + 1 && f.hardware.every((h) => inPoly([h.x, h.y], f.pts)), `${n} шт. на ${L.toFixed(1)} см`);
+  const sm = g.seams[0];
+  setSeamZip(g, sm, { kind: 'hidden' });
+  ok('потайная молния в боковом шве: застёжка без бегунка', sm.closure && !g.pieces.some((p) => p.hardware.some((h) => h.zipOf)) && f.meta[sm.a.e]?.zip?.kind === 'hidden');
+  setSeamZip(g, sm, null);
+  ok('убрать молнию — шов снова обычный', !sm.closure && !sm.zip && !f.meta[sm.a.e]?.zip && !sewingSteps(g).some((st) => st.title === 'Молнии'));
+  const z = addDecorZip(f, [[0, 60], [0, 75]], { kind: 'coil' });
+  const pull = f.hardware.find((h) => h.zipOf === z.id);
+  ok('декоративная молния: бегунок у верхнего конца', pull && pull.y > 72 && zipList(g).length === 1, pull ? pull.y.toFixed(1) : '');
+  removeStroke(f, z);
+  ok('удалить молнию — уходит и бегунок', !f.hardware.some((h) => h.zipOf) && !zipList(g).length);
+  const t = make('coat').g, fl = t.pieces.find((p) => p.name === 'Полочка левая'), bort = fl.corners.find((c) => fl.meta[c.id].name === 'борт').id;
+  const pr = zipPartner(t, fl, bort);
+  ok('пара для молнии: борт правой полочки', pr && pr.p.name === 'Полочка правая');
+  const zs = zipEdges(t, fl, bort, pr.p, pr.e, { kind: 'metal' });
+  ok('молния между бортами — новый шов', t.seams.includes(zs) && zs.zip.made && !zs.error);
+  setSeamZip(t, zs, null);
+  ok('убрать такую молнию — шов исчезает целиком', !t.seams.includes(zs) && !t.pieces.some((p) => p.hardware.some((h) => h.zipOf)));
+  addDecorZip(fl, [[10, 70], [10, 90]]);
+  fl.strokes = [];
+  ok('бегунок без молнии подчищается', pruneZipPulls(t).length === 1 && !fl.hardware.some((h) => h.zipOf));
+  void mat;
 }
 
 console.log(`\n${pass} пройдено, ${fail} провалено`);

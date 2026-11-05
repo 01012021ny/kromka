@@ -1,5 +1,6 @@
 // Left panel: one renderer per step tab
-import { GARMENT_PRESETS, findPiece } from '../patterns.js';
+import { findPiece } from '../patterns.js';
+import { LIBRARY, DESIGNERS, OUTFITS, OPEN_SOURCES, searchLibrary, facets, outfitsFor, matGroup } from '../library.js';
 import { PRESETS, CONS, describe, compString, makeMaterial } from '../materials.js';
 import { MEAS_LABELS } from '../body.js';
 import { ACC_TYPES, makeAcc } from '../accessories.js';
@@ -41,12 +42,50 @@ export function renderBodyReadout(app) {
   el.querySelectorAll('[data-meas]').forEach((inp) => (inp.onchange = () => { const o = { ...(app.S.body.overrides || {}) }; o[inp.dataset.meas] = +inp.value; app.setBody({ overrides: o }); }));
 }
 
+const GEN_LABEL = { top: 'плечевое', pants: 'поясное · брюки', skirt: 'поясное · юбка', snood: 'аксессуар из ткани' };
+const LEVEL = (n) => '●'.repeat(n) + '○'.repeat(3 - n);
+const FACETS = [['cat', 'Категория'], ['style', 'Ассоциации: дизайнеры и бренды'], ['sil', 'Силуэт'], ['mat', 'Ткань'], ['level', 'Сложность']];
 function leftGarments(app, L) {
-  L.innerHTML = `<div class="sec"><h2>Изделия</h2><p class="note">Базовые конструкции строятся от мерок манекена. Добавьте основу и меняйте её параметрами справа, затем — разрезами, накладками и правкой точек.</p>
-  <div class="list">${GARMENT_PRESETS.map((p, i) => `${p.cat && p.cat !== GARMENT_PRESETS[i - 1]?.cat ? `<div class="grp">${p.cat}</div>` : ''}<div class="card" data-add="${p.id}"><div class="sw" style="background:${PRESETS.find((x) => x.id === p.mat)?.color}"></div><div style="flex:1"><div class="t">${p.name}</div><div class="s">${{ top: 'плечевое', pants: 'поясное · брюки', skirt: 'поясное · юбка', snood: 'аксессуар из ткани' }[p.gen]} · слой ${p.layer}</div></div><span class="muted">+</span></div>`).join('')}</div></div>
+  const f = (app.libF ||= { q: '', cat: [], style: [], sil: [], mat: [], level: [], tags: [] });
+  const fc = facets();
+  const chip = (key, v, n, label) => `<button class="fc ${f[key].includes(v) ? 'on' : ''}" data-fk="${key}" data-fv="${esc(String(v))}">${esc(label ?? v)}<span class="n">${n}</span></button>`;
+  L.innerHTML = `<div class="sec"><h2>Библиотека лекал</h2><p class="note">Конструкции строятся по меркам манекена, дальше меняются параметрами, разрезами и накладками. «Ассоциации» — приёмы кроя, узнаваемые у дизайнера, а не его оригинальные лекала: дома моды лекала не публикуют.</p>
+  <input id="libQ" type="search" placeholder="Поиск: клёш, кожа, Rick, шнуровка, молния…" value="${esc(f.q)}" style="width:100%;margin-bottom:4px">
+  ${FACETS.map(([k, n]) => `<div class="facet"><span class="fh">${n}</span>${fc[k].map(([v, c]) => chip(k, v, c, k === 'style' ? DESIGNERS.find((d) => d.id === v).n : k === 'level' ? LEVEL(+v) : null)).join('')}</div>`).join('')}
+  <details class="facet"${f.tags.length ? ' open' : ''}><summary class="fh">Детали${f.tags.length ? ' · ' + f.tags.length : ''}</summary>${fc.tags.map(([v, c]) => chip('tags', v, c)).join('')}</details>
+  <div class="row" style="margin:6px 0 2px"><span class="muted" id="libN"></span><button class="sm ghost" id="libR" style="margin-left:auto">Сбросить фильтры</button></div>
+  <div class="list" id="libList"></div></div>
+  <div class="sec"><h3>Образы — собрать на манекене</h3><p class="note">Несколько вещей и обувь сразу. Текущие изделия заменяются (вернуть — «Вернуть» в подсказке или Ctrl+Z).</p><div class="list" id="libOut"></div></div>
+  <div class="sec"><h3>Открытые источники лекал</h3><p class="note">Брендовых каталогов в открытом доступе нет. Открытые базы, которые стоит знать:</p>
+  ${OPEN_SOURCES.map((o) => `<div class="src"><b>${esc(o.n)}</b> <span class="chip">${esc(o.lic)}</span><div class="muted">${esc(o.what)}</div><div class="muted mono">${esc(o.url)}</div></div>`).join('')}</div>
   <div class="sec"><h3>Слои и детали</h3><div class="tree" id="tree"></div></div>`;
-  L.querySelectorAll('[data-add]').forEach((c) => (c.onclick = () => app.addGarment(c.dataset.add)));
+  const q = $('#libQ');
+  q.oninput = () => { f.q = q.value; renderLibList(app); };
+  L.querySelectorAll('[data-fk]').forEach((b) => (b.onclick = () => {
+    const k = b.dataset.fk, v = k === 'level' ? +b.dataset.fv : b.dataset.fv, arr = f[k], i = arr.indexOf(v);
+    i >= 0 ? arr.splice(i, 1) : arr.push(v);
+    b.classList.toggle('on', i < 0);
+    if (k === 'tags') { const sm = b.closest('details')?.querySelector('summary'); if (sm) sm.textContent = 'Детали' + (f.tags.length ? ' · ' + f.tags.length : ''); }
+    renderLibList(app);
+  }));
+  $('#libR').onclick = () => { app.libF = null; renderLeft(app); };
+  renderLibList(app);
   renderTree(app);
+}
+function renderLibList(app) {
+  const f = app.libF, el = $('#libList'); if (!el) return;
+  const items = searchLibrary(f.q, f);
+  $('#libN').textContent = `${items.length} из ${LIBRARY.length}`;
+  const sw = (id) => PRESETS.find((x) => x.id === id)?.color || '#555';
+  el.innerHTML = items.length ? items.map((p, i) => `${p.cat !== items[i - 1]?.cat ? `<div class="grp">${esc(p.cat)}</div>` : ''}<div class="card" data-add="${p.id}" title="${esc(p.note || '')}"><div class="sw" style="background:${sw(p.mat)}"></div><div style="flex:1;min-width:0"><div class="t">${esc(p.name)}</div>
+    <div class="s">${esc(p.sil || GEN_LABEL[p.gen])} · ${esc(matGroup(p.mat))} · <span class="lv" title="Сложность">${LEVEL(p.level || 1)}</span>${p.decor ? ' · детали' : ''}</div>
+    ${(p.style || []).length ? `<div class="as">${p.style.map((s) => esc(DESIGNERS.find((d) => d.id === s)?.n || s)).join(' · ')}</div>` : ''}</div><span class="muted">+</span></div>`).join('')
+    : '<p class="note">Ничего не нашлось — ослабьте фильтры.</p>';
+  el.querySelectorAll('[data-add]').forEach((c) => (c.onclick = () => app.addGarment(c.dataset.add)));
+  const out = $('#libOut');
+  const os = outfitsFor(f.style);
+  out.innerHTML = (os.length ? os : OUTFITS).map((o) => `<div class="card" data-outfit="${o.id}"><div style="flex:1;min-width:0"><div class="t">${esc(o.name)}</div><div class="s">${o.items.map((id) => esc(LIBRARY.find((x) => x.id === id)?.name.split(/[,(]/)[0].toLowerCase() || id)).join(' + ')} + обувь</div><div class="as">${o.style.map((s) => esc(DESIGNERS.find((d) => d.id === s)?.n)).join(' · ')}</div></div><button class="sm">Собрать</button></div>`).join('');
+  out.querySelectorAll('[data-outfit]').forEach((c) => (c.onclick = () => app.applyOutfit(c.dataset.outfit)));
 }
 export function renderTree(app) {
   const el = $('#tree'); if (!el) return;
@@ -111,12 +150,15 @@ function leftDetails(app, L) {
   <div class="sec"><h3>Накладка (слой поверх)</h3><p class="note">Обведите область (O) — получится накладная деталь: карман, вставка, заплата, аппликация. Она раскладывается на крой отдельно.</p>
   <div class="row"><label>Ткань новых накладок</label><select id="ovMat"><option value="">как у детали</option>${matOpts(o.overlayMat)}</select></div></div>
   <div class="sec"><h3>Кисть</h3>
-  <div class="row"><label>Цвет</label><input type="color" id="brC" value="${o.brushColor}"></div><div class="row"><label>Режим</label><div class="pill" id="brM"><button data-m="paint" class="${o.brushMode === 'paint' ? 'on' : ''}">краска</button><button data-m="bleach" class="${o.brushMode === 'bleach' ? 'on' : ''}">вытравка</button></div></div>
+  <div class="row"><label>Цвет</label><input type="color" id="brC" value="${o.brushColor}"></div><div class="row"><label>Режим</label><div class="pill" id="brM"><button data-m="paint" class="${o.brushMode === 'paint' ? 'on' : ''}">краска</button><button data-m="bleach" class="${o.brushMode === 'bleach' ? 'on' : ''}">вытравка</button><button data-m="zip" class="${o.brushMode === 'zip' ? 'on' : ''}">молния</button></div></div>
   ${ctl('brW', 'Толщина, см', o.brushW, 0.1, 8, 0.1)}${ctl('brA', 'Непрозрачность', o.brushAlpha, 0.05, 1, 0.05)}</div>
+  <div class="sec"><h3>Молнии</h3><p class="note">Декоративная — кисть в режиме «молния»: проведите линию по лекалу или по 3D, бегунок встанет на верхний конец. Рабочая — выберите сторону детали: «Вшить молнию» в шов или «Соединить молнией» два борта.</p>
+  <div class="row"><label>Вид</label><select id="zpK">${[['metal', 'металлическая'], ['coil', 'спиральная']].map(([v, n]) => `<option value="${v}" ${o.zipKind === v ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+  <div class="row"><label>Тесьма / зубья</label><input type="color" id="zpT" value="${o.zipTape}"><input type="color" id="zpM" value="${o.zipMetal}"><button class="sm ${app.tool === 'brush' && o.brushMode === 'zip' ? 'on' : ''}" id="zpGo">Рисовать молнию</button></div></div>
   <div class="sec"><h3>Принт</h3><p class="note">PNG с прозрачностью, JPG, SVG. Принт живёт в координатах детали: двигается и тянется вместе с ней.</p>
   <div class="row"><button id="upImg">Загрузить изображение…</button>${app.pendingPrint ? '<span class="chip pos">готов к размещению</span>' : ''}</div>
   ${ctl('prW', 'Ширина при размещении, см', o.printW, 2, 60, 0.5)}</div>
-  <div class="sec"><h3>Фурнитура</h3><div class="row"><label>Тип</label><select id="hwT">${[['button', 'Пуговица'], ['snap', 'Кнопка'], ['eyelet', 'Люверс'], ['rivet', 'Заклёпка']].map(([v, n]) => `<option value="${v}" ${o.hwType === v ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+  <div class="sec"><h3>Фурнитура</h3><p class="note">Клик по детали — одна штука. Ряд с шагом вдоль края (шнуровка на люверсах, заклёпки по шву) — в инспекторе выбранной стороны.</p><div class="row"><label>Тип</label><select id="hwT">${[['button', 'Пуговица'], ['snap', 'Кнопка'], ['eyelet', 'Люверс'], ['rivet', 'Заклёпка']].map(([v, n]) => `<option value="${v}" ${o.hwType === v ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
   ${ctl('hwS', 'Диаметр, см', o.hwSize, 0.6, 4, 0.1)}<div class="row"><label>Цвет</label><input type="color" id="hwC" value="${o.hwColor}"></div></div>
   <div class="sec"><h3>Края и резинки</h3><p class="note">В инспекторе детали у каждой стороны есть: припуск, «сырой край» (без обработки, бахрома) и «резинка» — коэффициент сборки, физика стянет сторону.</p></div>`;
   L.querySelectorAll('[data-tool]').forEach((b) => (b.onclick = () => { setTool(app, b.dataset.tool); renderLeft(app); }));
@@ -127,6 +169,10 @@ function leftDetails(app, L) {
   bindCtl('prW', (v) => (o.printW = v));
   $('#upImg').onclick = () => document.getElementById('fileImg').click();
   $('#hwT').onchange = (e) => (o.hwType = e.target.value);
+  $('#zpK').onchange = (e) => (o.zipKind = e.target.value);
+  $('#zpT').oninput = (e) => (o.zipTape = e.target.value);
+  $('#zpM').oninput = (e) => (o.zipMetal = e.target.value);
+  $('#zpGo').onclick = () => { o.brushMode = 'zip'; setTool(app, 'brush'); renderLeft(app); };
   bindCtl('hwS', (v) => (o.hwSize = v));
   $('#hwC').oninput = (e) => (o.hwColor = e.target.value);
 }

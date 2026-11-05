@@ -1,7 +1,7 @@
 // @ts-check
 import * as THREE from 'three';
 import { Body, BODY_DEFAULT } from './body.js';
-import { GARMENT_PRESETS, GENERATORS, GEN_DEFAULTS, buildPiece, seamOf, findPiece } from './patterns.js';
+import { GENERATORS, GEN_DEFAULTS, buildPiece, seamOf, findPiece } from './patterns.js';
 import { Sim, seamRev } from './sim.js';
 import { SimProxy } from './simproxy.js';
 import { makeMaterial, PRESETS, physics } from './materials.js';
@@ -9,7 +9,9 @@ import { View3D } from './view3d.js';
 import { Editor2D } from './editor2d.js';
 import { nestAll, collectItems, nestMaterial } from './layout.js';
 import { buildAccessory, makeAcc, METALS } from './accessories.js';
-import { deep, uid, debounce, bbox, setUidBase, fmt } from './util.js';
+import { deep, uid, debounce, bbox, setUidBase, fmt, simplify, polyLen } from './util.js';
+import { addDecorZip, setSeamZip, zipEdges, pruneZipPulls, hardwareAlong, ZIP_STEP } from './hardware.js';
+import { findItem, applyDecor, OUTFITS } from './library.js';
 import * as UI from './ui.js';
 import { defaultGrading, gradeGarment, sizesOf, expandSizes } from './grading.js';
 
@@ -23,7 +25,7 @@ const S = {
 };
 const app = {
   S, sel: {}, tool: 'select', tab: 'garments', mode2d: 'pattern',
-  toolOpts: { brushColor: '#e9e4d8', brushW: 1.2, brushAlpha: 1, brushMode: 'paint', hwType: 'button', hwSize: 1.6, hwColor: '#1a1a1a', overlayMat: null, printW: 18 },
+  toolOpts: { brushColor: '#e9e4d8', brushW: 1.2, brushAlpha: 1, brushMode: 'paint', zipKind: 'metal', zipTape: '#161617', zipMetal: '#9b9b9e', hwType: 'button', hwSize: 1.6, hwColor: '#1a1a1a', overlayMat: null, printW: 18 },
   history: [], future: [], imgRatio: {},
 };
 window.__app = app;
@@ -160,6 +162,7 @@ app.liveTex = (p) => { const now = performance.now(); if (now - liveT > 90) { li
 app.brushLive = () => {};
 app.changed = (o = {}) => {
   view3d.invalidate(3);
+  if (o.geo) for (const g of S.garments) { const pr = pruneZipPulls(g); if (pr.length) { o.hw = true; o.tex = [...(o.tex || []), ...pr]; } }
   if (o.geo || o.view || o.grade) app.geoVersion++;
   if (o.tex) app.updateTex(o.tex);
   if (o.allTex) allTextures();
@@ -222,9 +225,8 @@ app.ensureMaterial = (presetId) => {
   if (!m) { m = makeMaterial(presetId); S.materials.push(m); }
   return m;
 };
-app.addGarment = (presetId) => {
-  const pr = GARMENT_PRESETS.find((p) => p.id === presetId);
-  app.commit('Добавить: ' + pr.name);
+// изделие из карточки библиотеки (или базового пресета) — без пересборки сцены
+function createGarment(pr) {
   const mat = app.ensureMaterial(pr.mat);
   const g = { id: uid('g'), gen: pr.gen, preset: pr.id, name: pr.name, params: { ...pr.p }, layer: pr.layer, visible: true, pieces: [], seams: [], viewOff: { x: 0, y: 0 }, baseMat: mat.id, grading: defaultGrading('M') };
   let maxX = -Infinity;
@@ -232,11 +234,36 @@ app.addGarment = (presetId) => {
   g.viewOff.x = isFinite(maxX) ? maxX + 40 : 0;
   generate(g, mat.id);
   S.garments.push(g);
+  return g;
+}
+app.addGarment = (presetId) => {
+  const pr = typeof presetId === 'string' ? findItem(presetId) : presetId;
+  if (!pr) return null;
+  app.commit('Добавить: ' + pr.name);
+  const g = createGarment(pr);
   allTextures(); rebuildSim(); scheduleLayout();
   app.select({ g: g.id });
   UI.renderLeft(app);
   autosave();
   return g;
+};
+/** собрать образ на манекене: вещи заменяют текущие, обувь — по образу; отмена — Ctrl+Z или «Вернуть» */
+app.applyOutfit = (id) => {
+  const o = OUTFITS.find((x) => x.id === id);
+  if (!o) return null;
+  app.commit('Образ: ' + o.name);
+  S.garments = [];
+  const gs = o.items.map((it) => findItem(it)).filter(Boolean).map((it) => createGarment(it));
+  if (o.shoes) {
+    let sh = S.accessories.find((a) => a.type === 'shoes');
+    if (!sh) { sh = makeAcc('shoes', app.ensureMaterial('horse12').id); S.accessories.push(sh); }
+    sh.p = { ...sh.p, ...o.shoes }; sh.visible = true;
+    buildAccessories(); shoeSig = shoeSigOf();
+  }
+  allTextures(); rebuildSim(true); scheduleLayout();
+  app.select({}); UI.renderLeft(app); editor.dirty = true; setTimeout(() => editor.fit(), 30); autosave();
+  app.toast(`Образ «${o.name}»: ${gs.map((g) => g.name.toLowerCase()).join(' + ')}`, 'pos', { label: 'Вернуть', fn: () => app.undo() });
+  return gs;
 };
 function fillParams(g) {
   const d = GEN_DEFAULTS[g.gen];
@@ -257,6 +284,10 @@ function generate(g, matId) {
   }
   g.pieces = out.pieces; g.seams = out.seams;
   g.stepLabels = out.stepLabels || null; g.stepNotes = out.stepNotes || null; g.trims = out.trims || null;
+  // детали из карточки библиотеки (молнии, люверсы, сырые края, карманы) — заново после каждой генерации
+  if (g.extraSteps) { delete g.extraSteps.labels[ZIP_STEP]; delete g.extraSteps.notes[ZIP_STEP]; }
+  const it = findItem(g.preset);
+  if (it?.decor && g.libDecor !== false) applyDecor(g, it.decor);
   // раскладка на столе: ряд 1 — детали на теле (y = высота на теле); ряд 2 под ним — пояс и внутренние детали
   let cur = g.viewOff.x, cur2 = g.viewOff.x;
   for (const p of g.pieces) {
@@ -288,6 +319,29 @@ app.addSeam = (g, a, b) => {
   app.toast('Шов создан', 'pos');
   app.changed({ geo: true });
 };
+// молнии и ряды фурнитуры (src/hardware.js)
+app.zipSeam = (g, s, z) => {
+  app.commit(z ? 'Молния в шве' : 'Убрать молнию');
+  setSeamZip(g, s, z);
+  app.changed({ tex: [s.a.p, s.b.p], hw: true, geo: !z && !g.seams.includes(s) });
+};
+app.zipEdges = (g, pa, ca, pb, cb, z) => {
+  app.commit('Молния между краями');
+  const s = zipEdges(g, pa, ca, pb, cb, z);
+  if (s.error) { app.history.pop(); app.toast(s.error, 'neg'); return null; } // ошибка — до изменений, откатывать нечего
+  s.rev = seamRev(g, s, body);
+  app.changed({ tex: [pa.id, pb.id], hw: true, geo: true });
+  app.toast(`Молния: ${pa.name} ↔ ${pb.name}. В 3D — застёгнута`, 'pos');
+  return s;
+};
+app.hardwareRow = (g, p, cid, o) => {
+  app.commit('Ряд фурнитуры');
+  const n = hardwareAlong(p, cid, o);
+  if (!n) { app.history.pop(); app.toast('Сторона короче шага — уменьшите шаг', 'neg'); return 0; }
+  app.changed({ hw: true });
+  app.toast(`Поставлено: ${n} шт.`, 'pos');
+  return n;
+};
 app.addRectPiece = (g, w, h, place) => {
   app.commit('Новая деталь');
   const y0 = place === 'arm' ? -h : body.m.y.waist - h / 2;
@@ -312,8 +366,18 @@ app.addOverlay = (g, p, pts) => {
   app.changed({ tex: [p.id], layout: true });
 };
 app.addStroke = (g, p, pts) => {
-  app.commit('Кисть');
   const o = app.toolOpts;
+  if (o.brushMode === 'zip') {
+    const sm = simplify(pts, 0.25);
+    if (polyLen(sm) < 3) { app.toast('Молния слишком короткая — проведите линию длиннее 3 см', 'neg'); return; }
+    app.commit('Декоративная молния');
+    addDecorZip(p, sm, { kind: o.zipKind, tape: o.zipTape, metal: o.zipMetal });
+    app.select({ g: g.id, p: p.id });
+    app.changed({ tex: [p.id], hw: true });
+    app.toast(`Молния ${Math.round(polyLen(sm))} см — в паспорте и себестоимости`, 'pos');
+    return;
+  }
+  app.commit('Кисть');
   (p.strokes ||= []).push({ id: uid('k'), pts, color: o.brushColor, w: o.brushW, alpha: o.brushAlpha, mode: o.brushMode });
   app.select({ g: g.id, p: p.id });
   app.changed({ tex: [p.id] });

@@ -497,8 +497,9 @@ export class Editor2D {
     if (t && (t.type === 'cutfree' || t.type === 'overlay' || t.type === 'brush')) {
       c.beginPath(); t.pts.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1])));
       if (t.type === 'overlay') c.closePath();
-      c.strokeStyle = t.type === 'brush' ? app.toolOpts.brushColor : '#f2ede2';
-      c.lineWidth = t.type === 'brush' ? app.toolOpts.brushW : 1.5 * px;
+      const zipB = t.type === 'brush' && app.toolOpts.brushMode === 'zip';
+      c.strokeStyle = zipB ? app.toolOpts.zipTape : t.type === 'brush' ? app.toolOpts.brushColor : '#f2ede2';
+      c.lineWidth = zipB ? 2.6 : t.type === 'brush' ? app.toolOpts.brushW : 1.5 * px;
       c.lineCap = 'round';
       if (t.type !== 'brush') c.setLineDash([4 * px, 3 * px]);
       c.stroke(); c.setLineDash([]);

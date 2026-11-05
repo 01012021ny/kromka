@@ -1,6 +1,6 @@
 // @ts-check
 // Per-piece texture canvas: fabric + overlays (colour blocks / patches) + prints + brush strokes + stitching, all in pattern space
-import { bbox, shade, rng } from './util.js';
+import { bbox, shade, rng, resample, polyLen } from './util.js';
 import { paintFabric } from './materials.js';
 import { edgePts } from './patterns.js';
 
@@ -52,6 +52,7 @@ export function drawDecor(ctx, piece, matsById, images, onImg) {
   // brush strokes
   for (const s of piece.strokes || []) {
     if (s.pts.length < 2) continue;
+    if (s.mode === 'zip') { drawZip(ctx, s.pts, s, 0); continue; }
     ctx.save();
     ctx.globalAlpha = s.alpha ?? 1;
     ctx.strokeStyle = s.color; ctx.lineWidth = s.w; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -82,6 +83,7 @@ export function drawDecor(ctx, piece, matsById, images, onImg) {
   for (let k = 0; k < piece.corners.length; k++) {
     const m = piece.meta[piece.corners[k].id] || {};
     const e = edgePts(piece, k);
+    if (m.zip) drawZip(ctx, e, m.zip, 1);
     if (m.raw) {
       const r = rng(k * 13 + 7);
       ctx.save(); ctx.strokeStyle = shade(mat.color, 0.3); ctx.lineWidth = 0.06; ctx.globalAlpha = 0.7;
@@ -123,6 +125,54 @@ export function drawDecor(ctx, piece, matsById, images, onImg) {
       ctx.restore();
     }
   }
+}
+
+/** смещение линии внутрь детали (CCW: ткань слева от направления обхода) */
+function offsetIn(e, d) {
+  return e.map((q, i) => { const a = e[Math.max(0, i - 1)], b = e[Math.min(e.length - 1, i + 1)], dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1; return [q[0] - (dy / l) * d, q[1] + (dx / l) * d]; });
+}
+const strokeLine = (ctx, pts) => { ctx.beginPath(); pts.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.stroke(); };
+/**
+ * Молния: тесьма + зубья. half = 0 — декоративная по линии (тесьма по обе стороны),
+ * half = 1 — половина рабочей молнии у края детали (вторая половина — на парной детали).
+ */
+function drawZip(ctx, pts, z, half) {
+  if (half && z.kind === 'hidden') return; // потайная молния снаружи не видна
+  const chain = z.kind === 'coil' ? 0.45 : z.kind === 'hidden' ? 0 : 0.6, pitch = z.kind === 'coil' ? 0.2 : 0.34;
+  const tape = z.color || z.tape || '#161617', metal = z.metal || '#9b9b9e';
+  ctx.save(); ctx.lineCap = 'butt'; ctx.lineJoin = 'round';
+  if (!half) {
+    ctx.strokeStyle = tape; ctx.lineWidth = z.w || 2.6; strokeLine(ctx, pts);
+    ctx.strokeStyle = shade(tape, 0.25); ctx.lineWidth = 0.05; ctx.setLineDash([0.3, 0.2]);
+    strokeLine(ctx, offsetIn(pts, (z.w || 2.6) / 2 - 0.3)); strokeLine(ctx, offsetIn(pts, -(z.w || 2.6) / 2 + 0.3)); ctx.setLineDash([]);
+  } else {
+    ctx.strokeStyle = tape; ctx.lineWidth = 1.1; strokeLine(ctx, offsetIn(pts, chain / 2 + 0.5));
+    ctx.strokeStyle = shade(tape, 0.25); ctx.lineWidth = 0.05; ctx.setLineDash([0.3, 0.2]); strokeLine(ctx, offsetIn(pts, chain / 2 + 0.75)); ctx.setLineDash([]);
+  }
+  if (chain > 0) {
+    const L = polyLen(pts), n = Math.max(2, Math.round(L / pitch)), q = resample(pts, n);
+    ctx.fillStyle = metal; ctx.strokeStyle = metal;
+    if (z.kind === 'coil') {
+      ctx.lineWidth = 0.07;
+      const a = half ? offsetIn(q, 0.04) : offsetIn(q, -chain / 2), b = half ? offsetIn(q, chain / 2) : offsetIn(q, chain / 2);
+      ctx.beginPath(); for (let i = 0; i <= n; i++) { const r = i % 2 ? a[i] : b[i]; i ? ctx.lineTo(r[0], r[1]) : ctx.moveTo(r[0], r[1]); } ctx.stroke();
+    } else {
+      // зубья поочерёдно с двух сторон оси; у половины на краю — каждый второй, от края внутрь
+      for (let i = half ? 0 : 1; i < n; i += half ? 2 : 1) {
+        const a = q[Math.max(0, i - 1)], b = q[Math.min(n, i + 1)], dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
+        const tx = dx / l, ty = dy / l, nx = -ty, ny = tx, sd = half ? 1 : i % 2 ? 1 : -1;
+        const c0 = half ? 0.02 : -0.08 * sd, c1 = half ? chain / 2 + 0.05 : sd * chain / 2, w = pitch * 0.32;
+        const p = q[i];
+        ctx.beginPath();
+        ctx.moveTo(p[0] + nx * c0 - tx * w, p[1] + ny * c0 - ty * w); ctx.lineTo(p[0] + nx * c1 - tx * w, p[1] + ny * c1 - ty * w);
+        ctx.lineTo(p[0] + nx * c1 + tx * w, p[1] + ny * c1 + ty * w); ctx.lineTo(p[0] + nx * c0 + tx * w, p[1] + ny * c0 + ty * w);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+    // верхний и нижний ограничители
+    if (!half) for (const end of [q[0], q[n]]) { ctx.fillRect(end[0] - 0.35, end[1] - 0.2, 0.7, 0.4); }
+  }
+  ctx.restore();
 }
 
 // отделочные строчки по шву: отступы внутрь детали, см

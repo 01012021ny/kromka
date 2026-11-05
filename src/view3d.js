@@ -5,6 +5,9 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { normalMap, physics } from './materials.js';
 import { pieceCanvas } from './textures.js';
 
+/** отступ слоя при отрисовке, см: каждый следующий слой — на 0,3 см дальше от тела */
+const layerOff = (rec) => Math.min(4, Math.max(0, rec?.garment?.layer || 0)) * 0.3;
+
 export class View3D {
   constructor(el, app) {
     this.el = el; this.app = app;
@@ -80,10 +83,13 @@ export class View3D {
       const nrm = new THREE.BufferAttribute(sim.nrm.subarray(rec.off * 3, (rec.off + rec.n) * 3), 3);
       nrm.setUsage(THREE.DynamicDrawUsage);
       g.setAttribute('normal', nrm);
+      const ow = new THREE.BufferAttribute(sim.outward.subarray(rec.off * 3, (rec.off + rec.n) * 3), 3);
+      ow.setUsage(THREE.DynamicDrawUsage);
+      g.setAttribute('outward', ow);
       g.setIndex(new THREE.BufferAttribute(rec.mesh.tris, 1));
       const col = new Float32Array(rec.n * 3).fill(1);
       g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      const mesh = new THREE.Mesh(g, this.material(rec.piece, matsById));
+      const mesh = new THREE.Mesh(g, this.material(rec.piece, matsById, layerOff(rec)));
       mesh.castShadow = true; mesh.receiveShadow = true;
       mesh.userData.rec = rec;
       mesh.frustumCulled = false;
@@ -108,7 +114,7 @@ export class View3D {
     mesh.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     mesh.geometry.setAttribute('uv1', new THREE.BufferAttribute(uv1, 2));
   }
-  material(piece, matsById) {
+  material(piece, matsById, off = 0) {
     const m = matsById[piece.mat] || Object.values(matsById)[0];
     const ph = physics(m);
     const nm = normalMap(ph.tex);
@@ -122,6 +128,14 @@ export class View3D {
     const tex = this.texCache.get(piece.id);
     if (tex) mat.map = tex.texture;
     if (m.cons === 'chiffon' || m.cons === 'mesh') { mat.transparent = true; mat.opacity = m.cons === 'mesh' ? 0.78 : 0.62; mat.depthWrite = false; }
+    // слой изделия при отрисовке чуть отодвигается наружу (от тела): тонкие пересечения слоёв, которые физика
+    // не успела развести, не видны. Геометрия и физика не меняются — только вершинный шейдер.
+    mat.userData.layerOff = { value: off };
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.uLayerOff = mat.userData.layerOff;
+      sh.vertexShader = 'attribute vec3 outward;\nuniform float uLayerOff;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed += outward * uLayerOff;');
+    };
+    mat.customProgramCacheKey = () => 'cloth-layer';
     return mat;
   }
   updateTexture(piece, matsById, images, onImg) {
@@ -135,7 +149,7 @@ export class View3D {
     const e = this.meshes.get(piece.id);
     if (e) {
       e.mesh.material.dispose();
-      e.mesh.material = this.material(piece, matsById);
+      e.mesh.material = this.material(piece, matsById, layerOff(e.rec));
       this.applyUV(e.mesh, e.rec, matsById);
       this.setStrain(this.showStrain);
     }
@@ -147,6 +161,7 @@ export class View3D {
       for (const { mesh } of this.meshes.values()) {
         mesh.geometry.attributes.position.needsUpdate = true;
         mesh.geometry.attributes.normal.needsUpdate = true;
+        mesh.geometry.attributes.outward.needsUpdate = true;
       }
       if (this.showStrain) this.updateStrain(sim);
       this.updateHardware(sim);
@@ -192,7 +207,7 @@ export class View3D {
     const metal = (c) => new THREE.MeshStandardMaterial({ color: c, metalness: 0.9, roughness: 0.3 });
     const geos = {
       button: new THREE.CylinderGeometry(1, 1, 0.35, 20), snap: new THREE.CylinderGeometry(1, 1, 0.45, 20),
-      eyelet: new THREE.TorusGeometry(0.75, 0.25, 8, 20), rivet: new THREE.SphereGeometry(0.6, 12, 8), zipper: new THREE.BoxGeometry(0.5, 1, 0.3),
+      eyelet: new THREE.TorusGeometry(0.75, 0.25, 8, 20), rivet: new THREE.SphereGeometry(0.6, 12, 8), zipper: new THREE.BoxGeometry(1, 2.2, 0.28),
     };
     for (const rec of sim.pieces) {
       for (const h of rec.piece.hardware || []) {
@@ -205,21 +220,28 @@ export class View3D {
         mesh.scale.set(s, h.type === 'eyelet' ? s : s, s);
         mesh.castShadow = true;
         this.clothGroup.add(mesh);
-        this.hwMeshes.push({ mesh, off: rec.off, loc, type: h.type });
+        this.hwMeshes.push({ mesh, off: rec.off, loc, type: h.type, s, lo: layerOff(rec) });
       }
     }
   }
   updateHardware(sim) {
     const up = new THREE.Vector3(0, 1, 0), n = new THREE.Vector3(), p = new THREE.Vector3();
+    const zx = new THREE.Vector3(), zy = new THREE.Vector3(), zm = new THREE.Matrix4();
     for (const h of this.hwMeshes) {
       const [a, b, c] = h.loc.tri.map((i) => (h.off + i) * 3);
       const [l1, l2, l3] = h.loc.w;
       p.set(0, 0, 0); n.set(0, 0, 0);
       for (let k = 0; k < 3; k++) { p.setComponent(k, l1 * sim.x[a + k] + l2 * sim.x[b + k] + l3 * sim.x[c + k]); n.setComponent(k, l1 * sim.outward[a + k] + l2 * sim.outward[b + k] + l3 * sim.outward[c + k]); }
       n.normalize();
-      h.mesh.position.copy(p).addScaledVector(n, 0.25);
+      h.mesh.position.copy(p).addScaledVector(n, 0.25 + (h.lo || 0));
       if (h.type === 'eyelet') h.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
-      else h.mesh.quaternion.setFromUnitVectors(up, n);
+      else if (h.type === 'zipper') {
+        // бегунок: плашмя на ткани, язычок свисает вниз от замка
+        zy.set(0, -1, 0).addScaledVector(n, n.y); if (zy.lengthSq() < 1e-4) zy.set(1, 0, 0); zy.normalize();
+        zx.crossVectors(zy, n).normalize();
+        zm.makeBasis(zx, zy, n); h.mesh.quaternion.setFromRotationMatrix(zm);
+        h.mesh.position.addScaledVector(zy, 0.9 * (h.s || 0.85));
+      } else h.mesh.quaternion.setFromUnitVectors(up, n);
     }
   }
   setAccessories(groups) {

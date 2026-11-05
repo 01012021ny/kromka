@@ -8,6 +8,8 @@ import { $, ctl, bindCtl } from './controls.js';
 import { renderLeft, renderTree } from './left.js';
 import { specHTML, bindSpec, costHTML, bindCost } from './sample.js';
 import { addFacing, addBinding, addLining, removeLining } from '../finish.js';
+import { ZIP_TYPES, zipPartner, removeStroke } from '../hardware.js';
+import { findItem, DESIGNERS } from '../library.js';
 import { makeMaterial } from '../materials.js';
 
 export function renderRight(app) {
@@ -28,6 +30,7 @@ function inspGarment(app, R, g) {
   const steps = sewingSteps(g);
   R.innerHTML = `<div class="sec"><h2>${esc(g.name)}</h2><div class="row"><input id="gName" value="${esc(g.name)}" style="flex:1"><button class="sm danger" id="gDel">Удалить</button></div>
   <p class="note">Параметры перестраивают лекала от мерок манекена (ручные правки этого изделия сбросятся; отмена — Ctrl+Z).</p>
+  ${libHTML(g)}
   ${P.map(([k, n, mi, ma, st]) => ctl('gp_' + k, n, g.params[k] ?? 0, mi, ma, st)).join('')}</div>
   ${specHTML(app, g)}
   ${costHTML(app, g)}
@@ -39,6 +42,7 @@ function inspGarment(app, R, g) {
   for (const [k, , , , st] of P) bindCtl('gp_' + k, (v, fin) => { g.params[k] = v; if (fin) app.regenerate(g); else app.regenDebounced(g); }, '', st < 1 ? 1 : 0);
   $('#gName').onchange = (e) => { g.name = e.target.value; renderTree(app); };
   $('#gDel').onclick = () => app.removeGarment(g);
+  if ($('#gLib')) $('#gLib').onclick = () => { app.commit('Детали из библиотеки'); g.libDecor = g.libDecor === false; app.regenerate(g, false); };
   $('#gMat').onchange = (e) => { g.baseMat = e.target.value; };
   $('#gMatAll').onclick = () => { app.commit('Ткань изделия'); for (const p of g.pieces) p.mat = g.baseMat; app.changed({ allTex: true, geo: true, layout: true }); };
   $('#nAdd').onclick = () => app.addRectPiece(g, +$('#nw').value, +$('#nh').value, $('#npl').value);
@@ -46,6 +50,14 @@ function inspGarment(app, R, g) {
   bindCost(app, g);
   bindLining(app, g);
   bindSpec(app, g, () => { const R2 = $('#right'), st = R2.scrollTop; renderRight(app); R2.scrollTop = st; });
+}
+// ── откуда изделие: карточка библиотеки, ассоциации, детали карточки
+function libHTML(g) {
+  const it = findItem(g.preset);
+  if (!it) return '';
+  const st = (it.style || []).map((s) => DESIGNERS.find((d) => d.id === s)?.n).filter(Boolean);
+  return `<div class="libinfo">${st.length ? `<div class="as">Ассоциации: ${esc(st.join(' · '))}</div>` : ''}${it.note ? `<div class="muted">${esc(it.note)}</div>` : ''}
+  ${it.decor ? `<div class="row" style="margin-top:4px"><label>Детали карточки (молнии, люверсы, края)</label><button class="sm ${g.libDecor === false ? '' : 'on'}" id="gLib">${g.libDecor === false ? 'выкл' : 'вкл'}</button></div>` : ''}</div>`;
 }
 // ── обработка выбранного края: обтачка / косая бейка
 function edgeFinishHTML(g, p, cid) {
@@ -55,7 +67,36 @@ function edgeFinishHTML(g, p, cid) {
   ${sewn ? '<p class="note">Сторона сшита с другой деталью — обтачка и бейка нужны открытым краям: горловине, пройме, низу, борту.</p>' : `
   <div class="row"><button class="sm" id="fFace">Обтачка</button><label style="flex:0 0 auto">ширина</label><input type="number" id="fFaceW" value="4" step="0.5" min="2" max="12" style="width:52px"><span class="muted">см</span></div>
   <div class="row"><button class="sm" id="fBind">Косая бейка</button><label style="flex:0 0 auto">готовая</label><input type="number" id="fBindW" value="1" step="0.1" min="0.4" max="3" style="width:52px"><span class="muted">см</span></div>
-  <p class="note">Обтачка — деталь той же формы, что край, отворачивается внутрь. Бейка — полоса по косой 4× готовой ширины; край детали становится без припуска. Обе кроятся и попадают в раскладку, паспорт и порядок пошива.</p>`}</div>`;
+  <p class="note">Обтачка — деталь той же формы, что край, отворачивается внутрь. Бейка — полоса по косой 4× готовой ширины; край детали становится без припуска. Обе кроятся и попадают в раскладку, паспорт и порядок пошива.</p>`}
+  ${zipHTML(g, p, cid, sewn)}${rowHTML()}</div>`;
+}
+// ── молния: в шве или между двумя открытыми краями (борт ↔ борт)
+function zipHTML(g, p, cid, sewn) {
+  const kinds = Object.entries(ZIP_TYPES).map(([k, z]) => `<option value="${k}">${z.n}</option>`).join('');
+  const opts = `<div class="row"><label>Вид</label><select id="zKind">${kinds}</select><label style="flex:0 0 auto"><input type="checkbox" id="zOpen" ${sewn ? '' : 'checked'}> разъёмная</label></div>
+  <div class="row"><label>Тесьма / зубья</label><input type="color" id="zTape" value="#161617"><input type="color" id="zMetal" value="#9b9b9e"></div>`;
+  if (sewn) {
+    if (sewn.zip) return `<h3 style="margin-top:10px">Молния в шве</h3><p class="note pos">${esc(sewn.zip.open ? 'разъёмная ' : '')}${ZIP_TYPES[sewn.zip.kind]?.n || ''} · ${fmt(seamLengths(g, sewn)?.la || 0)} см · в 3D застёгнута</p><button class="sm danger" id="zOff">Убрать молнию</button>`;
+    return `<h3 style="margin-top:10px">Молния в шве «${esc(sewn.name)}»</h3>${opts}<button class="sm" id="zOn">Вшить молнию</button><p class="note">Шов станет застёжкой: в 3D застёгнут, в паспорте — молния нужной длины и шаг пошива «Молнии».</p>`;
+  }
+  const pr = zipPartner(g, p, cid);
+  if (!pr) return '';
+  return `<h3 style="margin-top:10px">Молния к другому краю</h3>${opts}<button class="sm" id="zPair">Соединить молнией с «${esc(pr.p.meta[pr.e].name)}» · ${esc(pr.p.name)}</button><p class="note">Борта сойдутся встык — заход бортов лучше поставить 0. Убрать — кнопкой у шва или Alt+клик инструментом «Шов».</p>`;
+}
+function rowHTML() {
+  const t = [['eyelet', 'Люверсы'], ['rivet', 'Заклёпки'], ['snap', 'Кнопки'], ['button', 'Пуговицы']].map(([v, n]) => `<option value="${v}">${n}</option>`).join('');
+  return `<h3 style="margin-top:10px">Ряд фурнитуры вдоль края</h3>
+  <div class="row"><select id="rwT">${t}</select><label style="flex:0 0 auto">шаг</label><input type="number" id="rwS" value="3" step="0.5" min="0.8" max="20" style="width:52px"><label style="flex:0 0 auto">от края</label><input type="number" id="rwI" value="1.2" step="0.1" min="0.3" max="6" style="width:52px"></div>
+  <div class="row"><label>Диаметр, см</label><input type="number" id="rwD" value="1.2" step="0.1" min="0.4" max="4" style="width:52px"><input type="color" id="rwC" value="#8f8f92"><button class="sm" id="rwGo">Поставить ряд</button></div>
+  <p class="note">Люверсы под шнуровку, заклёпки по шву, кнопки по борту. Каждая штука — в себестоимости и паспорте.</p>`;
+}
+function bindZip(app, g, p, cid) {
+  const z = () => ({ kind: $('#zKind')?.value, open: $('#zOpen')?.checked, tape: $('#zTape')?.value, metal: $('#zMetal')?.value });
+  const sewn = cid && seamOf(g, p.id, cid);
+  if ($('#zOn')) $('#zOn').onclick = () => app.zipSeam(g, sewn, z());
+  if ($('#zOff')) $('#zOff').onclick = () => app.zipSeam(g, sewn, null);
+  if ($('#zPair')) $('#zPair').onclick = () => { const pr = zipPartner(g, p, cid); if (pr) app.zipEdges(g, p, cid, pr.p, pr.e, z()); };
+  if ($('#rwGo')) $('#rwGo').onclick = () => app.hardwareRow(g, p, cid, { type: $('#rwT').value, step: +$('#rwS').value || 3, inset: +$('#rwI').value || 1.2, size: +$('#rwD').value || 1.2, color: $('#rwC').value });
 }
 function bindEdgeFinish(app, g, p, cid) {
   const done = (r, label) => {
@@ -145,7 +186,7 @@ function inspPiece(app, R, p) {
   ${ov ? `<div class="sec"><h3>Накладка</h3><div class="row"><input id="oName" value="${esc(ov.name)}" style="flex:1"><button class="sm danger" id="oDel">×</button></div><div class="row"><label>Ткань</label><select id="oMat" style="flex:1">${app.S.materials.map((m) => `<option value="${m.id}" ${ov.mat === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></div><div class="row"><label>Припуск, см</label><input type="number" step="0.1" id="oSa" value="${ov.sa ?? 1}"></div><p class="note">${fmt(Math.abs(area(ov.pts)) / 100, 1)} дм² · раскладывается отдельно</p></div>` : ''}
   ${pr ? `<div class="sec"><h3>Принт</h3>${ctl('rW', 'Ширина, см', pr.w, 1, 80, 0.5)}${ctl('rRot', 'Поворот, °', pr.rot || 0, -180, 180, 1)}${ctl('rOp', 'Непрозрачность', pr.opacity ?? 1, 0.05, 1, 0.05)}<div class="row"><label>Смешивание</label><select id="rBl"><option value="">обычное</option><option value="multiply" ${pr.blend === 'multiply' ? 'selected' : ''}>умножение (впитался)</option><option value="screen" ${pr.blend === 'screen' ? 'selected' : ''}>экран (светлый)</option></select></div><button class="sm danger" id="rDel">Удалить принт</button></div>` : ''}
   ${(p.hardware || []).length ? `<div class="sec"><h3>Фурнитура · ${p.hardware.length}</h3><button class="sm danger" id="hClr">Убрать всю фурнитуру детали</button></div>` : ''}
-  ${(p.strokes || []).length ? `<div class="sec"><h3>Рисунок кистью · ${p.strokes.length}</h3><button class="sm" id="sUndo">Убрать последний штрих</button> <button class="sm danger" id="sClr">Очистить</button></div>` : ''}`;
+  ${(p.strokes || []).length ? `<div class="sec"><h3>Рисунок кистью · ${p.strokes.length}${p.strokes.some((x) => x.mode === 'zip') ? ` <span class="chip">молний: ${p.strokes.filter((x) => x.mode === 'zip').length}</span>` : ''}</h3><button class="sm" id="sUndo">Убрать последний штрих</button> <button class="sm danger" id="sClr">Очистить</button></div>` : ''}`;
   $('#pName').onchange = (e) => { p.name = e.target.value; app.changed({}); };
   $('#pMat').onchange = (e) => { app.commit('Ткань детали'); p.mat = e.target.value; app.changed({ tex: [p.id], geo: true, layout: true }); };
   bindCtl('pGrain', (v, fin) => { if (fin) { app.commit('Нить'); p.grain = v; app.changed({ geo: true, tex: [p.id], layout: true }); } else { p.grain = v; app.editor.dirty = true; } }, '°', 0);
@@ -154,6 +195,7 @@ function inspPiece(app, R, p) {
   $('#pMir').onclick = () => { app.commit('Зеркальная копия'); const c = duplicatePiece(g, p, true); app.updateTex([c.id]); app.select({ p: c.id }); app.changed({ geo: true, layout: true }); };
   $('#pDel').onclick = () => deleteSelected(app, true);
   bindEdgeFinish(app, g, p, sel.edge);
+  bindZip(app, g, p, sel.edge);
   R.querySelectorAll('[data-edge]').forEach((tr) => (tr.onclick = (e) => { if (e.target.tagName === 'INPUT') return; app.select({ g: g.id, p: p.id, edge: tr.dataset.edge }); }));
   R.querySelectorAll('[data-sa]').forEach((i) => (i.onchange = () => { app.commit('Припуск'); p.meta[i.dataset.sa].sa = Math.max(0, +i.value); app.changed({ layout: true }); }));
   R.querySelectorAll('[data-raw]').forEach((i) => (i.onchange = () => { app.commit('Сырой край'); p.meta[i.dataset.raw].raw = i.checked; app.changed({ tex: [p.id], layout: true }); }));
@@ -171,8 +213,8 @@ function inspPiece(app, R, p) {
     $('#rDel').onclick = () => { app.commit('Удалить принт'); p.prints = p.prints.filter((x) => x !== pr); app.select({ p: p.id }); app.changed({ tex: [p.id] }); };
   }
   if ($('#hClr')) $('#hClr').onclick = () => { app.commit('Фурнитура'); p.hardware = []; app.changed({ hw: true }); };
-  if ($('#sUndo')) $('#sUndo').onclick = () => { app.commit('Кисть'); p.strokes.pop(); app.changed({ tex: [p.id] }); };
-  if ($('#sClr')) $('#sClr').onclick = () => { app.commit('Кисть'); p.strokes = []; app.changed({ tex: [p.id] }); };
+  if ($('#sUndo')) $('#sUndo').onclick = () => { app.commit('Кисть'); removeStroke(p, p.strokes[p.strokes.length - 1]); app.changed({ tex: [p.id], hw: true }); };
+  if ($('#sClr')) $('#sClr').onclick = () => { app.commit('Кисть'); for (const st of p.strokes.slice()) removeStroke(p, st); app.changed({ tex: [p.id], hw: true }); };
 }
 
 function inspMat(app, R, m) {

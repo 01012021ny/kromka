@@ -136,6 +136,17 @@ kbd{font:10px var(--mono);border:1px solid var(--ln2);border-radius:2px;padding:
 .pill button.on{background:var(--ac);color:#0b0b0c}
 .libgrp{margin:10px 0 4px;font:10px var(--mono);color:var(--tx3);letter-spacing:.1em;text-transform:uppercase}
 .lib{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.facet{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:3px 0}
+.facet .fh{font:10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);width:100%;margin-top:5px;cursor:default}
+details.facet summary.fh{cursor:pointer;list-style:none}details.facet summary.fh::before{content:'▸ '}details.facet[open] summary.fh::before{content:'▾ '}
+button.fc{font:10.5px var(--sans);padding:2px 8px;border-radius:10px;border:1px solid var(--ln2);background:transparent;color:var(--tx2)}
+button.fc:hover{border-color:#55555e;color:var(--tx)}
+button.fc.on{background:var(--ac);color:#0b0b0c;border-color:var(--ac)}
+button.fc .n{opacity:.5;font:9px var(--mono);margin-left:4px}
+.card .as{font-size:10.5px;color:var(--tx2);margin-top:1px}
+.lv{letter-spacing:1px}
+.libinfo{margin:2px 0 8px;font-size:11.5px}.libinfo .as{color:var(--tx2)}
+.src{margin:6px 0;font-size:11.5px}.src .mono{font:10px var(--mono)}
 .lib .card{padding:6px 7px}
 .lib .card .t{font-size:11.5px}
 .help-i{display:inline-flex;width:15px;height:15px;border:1px solid var(--ln2);border-radius:50%;align-items:center;justify-content:center;font:9px var(--mono);color:var(--tx3)}
