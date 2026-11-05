@@ -870,11 +870,11 @@ export function seamLengths(g, s) {
 export function sewingSteps(g) {
   const by = {};
   for (const s of g.seams) (by[s.order ?? 9] ||= []).push(s);
-  const notes = g.stepNotes || {};
+  const notes = { ...(g.stepNotes || {}), ...(g.extraSteps?.notes || {}) };
   for (const k of Object.keys(notes)) by[k] ||= [];
   const keys = Object.keys(by).map(Number).sort((a, b) => a - b);
   const steps = [];
-  const labels = { 0: 'Соединить детали членения (рельефы, вставки)', 1: 'Плечевые / средние швы', 2: 'Боковые швы', 3: 'Втачать рукава / шаговые швы', 4: 'Швы рукавов и боковые швы', 9: 'Пользовательские швы', ...(g.stepLabels || {}) };
+  const labels = { 0: 'Соединить детали членения (рельефы, вставки)', 1: 'Плечевые / средние швы', 2: 'Боковые швы', 3: 'Втачать рукава / шаговые швы', 4: 'Швы рукавов и боковые швы', 9: 'Пользовательские швы', ...(g.stepLabels || {}), ...(g.extraSteps?.labels || {}) };
   for (const k of keys) steps.push({ title: labels[k] || 'Швы', seams: by[k], note: notes[k] || '' });
   return steps;
 }

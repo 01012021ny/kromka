@@ -2,7 +2,7 @@
 // cutting preserves area, nesting places every piece, DXF has a block per piece.
 import * as THREE from 'three';
 import { Body, BODY_DEFAULT } from '../src/body.js';
-import { GARMENT_PRESETS, GENERATORS, cutPiece, edgeLen, pieceArea, edgeK, seamLengths, edgePts, cutOutline } from '../src/patterns.js';
+import { GARMENT_PRESETS, GENERATORS, cutPiece, edgeLen, pieceArea, edgeK, seamLengths, edgePts, cutOutline, sewingSteps } from '../src/patterns.js';
 import { Sim, seamRev } from '../src/sim.js';
 import { makeMaterial } from '../src/materials.js';
 import { gradeGarment, defaultGrading } from '../src/grading.js';
@@ -10,6 +10,7 @@ import { nestAll } from '../src/layout.js';
 import { dxf, plt, zip, exportSets, shrinkScale } from '../src/export.js';
 import { patternSpec, sampleShrink, compoundShrink } from '../src/spec.js';
 import { garmentCost, stockFit } from '../src/cost.js';
+import { addFacing, addBinding, addLining, removeLining } from '../src/finish.js';
 import { bbox } from '../src/util.js';
 
 let pass = 0, fail = 0;
@@ -198,6 +199,37 @@ console.log('Сгиб у колена, болт-фронт, себестоимо
   ok('себестоимость: ткань, фурнитура, нитки, работа', c.fabricRub > 500 && rivets >= 6 && c.trims.some((t) => t.type === 'zipper') && c.minutes > 60 && c.minutes < 400 && Math.abs(c.total - (c.fabricRub + c.trimsRub + c.threadRub + c.laborRub)) < 1e-6, `${Math.round(c.total)} ₽ · ${(c.minutes / 60).toFixed(1)} ч · ткань ${c.fabric[0].qty.toFixed(2)} м`);
   const fit = stockFit({ mat: { stock: 1.2 }, length: 150, placed: [] }), fit2 = stockFit({ mat: { stock: 2 }, length: 150, placed: [] });
   ok('отрез: хватит / не хватит', !fit.ok && Math.abs(fit.left + 0.3) < 1e-9 && fit2.ok && stockFit({ mat: {}, length: 150, placed: [] }) === null);
+}
+
+console.log('Обтачка, бейка, подкладка');
+{
+  const { g, mat } = make('tee');
+  const front = g.pieces.find((p) => p.name === 'Перед'), neck = front.corners.find((c) => front.meta[c.id].name === 'горловина').id;
+  const L = edgeLen(front, edgeK(front, neck)), n0 = g.seams.length;
+  const f = addFacing(g, front, neck, 4);
+  ok('обтачка горловины: внутренняя деталь со швом по краю', f.piece && f.piece.inner && g.seams.length === n0 + 1 && f.piece.base === front.base);
+  const A = pieceArea(f.piece);
+  ok('обтачка: площадь ≈ длина края × ширина', Math.abs(A - L * 4) / (L * 4) < 0.25, `${A.toFixed(0)} см² при ${(L * 4).toFixed(0)}`);
+  ok('обтачка: повторно на сшитую сторону — отказ', !!addFacing(g, front, neck, 4).error);
+  const back = g.pieces.find((p) => p.name === 'Спинка'), bneck = back.corners.find((c) => back.meta[c.id].name === 'горловина').id;
+  const bl = edgeLen(back, edgeK(back, bneck));
+  const b = addBinding(g, back, bneck, 1);
+  const bb = bbox(b.piece.pts);
+  ok('бейка: полоса 4× готовой ширины, по косой, край без припуска', Math.abs(bb.h - 4) < 0.01 && b.piece.grain === 45 && back.meta[bneck].sa === 0 && back.meta[bneck].bound === 1, `${bb.w.toFixed(1)} × ${bb.h.toFixed(1)} при крае ${bl.toFixed(1)}`);
+  const xl = gradeGarment(g, body.m, 'XL');
+  const fX = xl.find((p) => p.id === front.id), ffX = xl.find((p) => p.id === f.piece.id);
+  ok('градация: обтачка идёт за горловиной', Math.abs(edgeLen(ffX, edgeK(ffX, ffX.corners[0].id)) - edgeLen(fX, edgeK(fX, neck))) < 0.4, `${edgeLen(ffX, 0).toFixed(1)} / ${edgeLen(fX, edgeK(fX, neck)).toFixed(1)}`);
+  const sim = drape([g], { [mat.id]: mat }, 60);
+  ok('обтачка и бейка не драпируются в 3D', sim.pieces.length === g.pieces.filter((p) => !p.inner).length);
+  const c = make('coat').g, outer = c.pieces.filter((p) => !p.inner).length, s0 = c.seams.length;
+  const lin = makeMaterial('lining');
+  const r = addLining(c, lin.id);
+  ok('подкладка: копия каждой основной детали и её швы', r.pieces.length === outer && c.seams.length === s0 * 2 && r.pieces.every((p) => p.inner && p.lining && p.mat === lin.id));
+  const hem = r.pieces[0].corners.map((k) => r.pieces[0].meta[k.id]).find((m) => m.name === 'низ');
+  ok('подкладка: низ на 2 см выше (меньше припуск)', !hem || hem.sa < 3, `${hem?.sa}`);
+  ok('подкладка: второй раз — отказ, убрать — убирается', !!addLining(c, lin.id).error && removeLining(c) === outer && c.seams.length === s0);
+  const steps = sewingSteps({ ...g, extraSteps: g.extraSteps });
+  ok('порядок пошива: шаг «Обтачки и бейки» с пояснением', steps.some((st) => st.title === 'Обтачки и бейки' && st.note && st.seams.length === 2));
 }
 
 console.log('Образец: усадка и калибровка');

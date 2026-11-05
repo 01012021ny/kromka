@@ -7,6 +7,8 @@ import { SIZES, STEP_LABELS, defaultGrading, sizesOf } from '../grading.js';
 import { $, ctl, bindCtl } from './controls.js';
 import { renderLeft, renderTree } from './left.js';
 import { specHTML, bindSpec, costHTML, bindCost } from './sample.js';
+import { addFacing, addBinding, addLining, removeLining } from '../finish.js';
+import { makeMaterial } from '../materials.js';
 
 export function renderRight(app) {
   const R = $('#right');
@@ -29,6 +31,7 @@ function inspGarment(app, R, g) {
   ${P.map(([k, n, mi, ma, st]) => ctl('gp_' + k, n, g.params[k] ?? 0, mi, ma, st)).join('')}</div>
   ${specHTML(app, g)}
   ${costHTML(app, g)}
+  ${liningHTML(app, g)}
   ${gradingHTML(g)}
   <div class="sec"><h3>Ткань всего изделия</h3><select id="gMat" style="width:100%">${app.S.materials.map((m) => `<option value="${m.id}" ${g.baseMat === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select><button class="sm" id="gMatAll" style="margin-top:6px">Назначить всем деталям</button></div>
   <div class="sec"><h3>Новая деталь</h3><div class="row"><input type="number" id="nw" value="20"> × <input type="number" id="nh" value="30"> см <select id="npl"><option value="front">на перед</option><option value="back">на спинку</option><option value="none">отдельно</option></select></div><button class="sm" id="nAdd">+ Прямоугольник</button><p class="note">Для геометрических zero-waste конструкций: прямоугольник шириной в рулон, клинья, ластовицы.</p></div>
@@ -41,8 +44,52 @@ function inspGarment(app, R, g) {
   $('#nAdd').onclick = () => app.addRectPiece(g, +$('#nw').value, +$('#nh').value, $('#npl').value);
   bindGrading(app, g);
   bindCost(app, g);
+  bindLining(app, g);
   bindSpec(app, g, () => { const R2 = $('#right'), st = R2.scrollTop; renderRight(app); R2.scrollTop = st; });
 }
+// ── обработка выбранного края: обтачка / косая бейка
+function edgeFinishHTML(g, p, cid) {
+  if (!cid || !p.meta[cid]) return '<p class="note">Выберите сторону (клик по строке или по краю детали) — появятся обтачка и бейка в один клик.</p>';
+  const m = p.meta[cid], sewn = seamOf(g, p.id, cid);
+  return `<div class="finish"><h3 style="margin-top:10px">Обработка края «${esc(m.name || 'сторона')}»</h3>
+  ${sewn ? '<p class="note">Сторона сшита с другой деталью — обтачка и бейка нужны открытым краям: горловине, пройме, низу, борту.</p>' : `
+  <div class="row"><button class="sm" id="fFace">Обтачка</button><label style="flex:0 0 auto">ширина</label><input type="number" id="fFaceW" value="4" step="0.5" min="2" max="12" style="width:52px"><span class="muted">см</span></div>
+  <div class="row"><button class="sm" id="fBind">Косая бейка</button><label style="flex:0 0 auto">готовая</label><input type="number" id="fBindW" value="1" step="0.1" min="0.4" max="3" style="width:52px"><span class="muted">см</span></div>
+  <p class="note">Обтачка — деталь той же формы, что край, отворачивается внутрь. Бейка — полоса по косой 4× готовой ширины; край детали становится без припуска. Обе кроятся и попадают в раскладку, паспорт и порядок пошива.</p>`}</div>`;
+}
+function bindEdgeFinish(app, g, p, cid) {
+  const done = (r, label) => {
+    if (r.error) { app.toast(r.error, 'neg'); return; }
+    app.updateTex([p.id, r.piece.id]);
+    app.select({ g: g.id, p: p.id, edge: cid });
+    app.changed({ geo: true, layout: true, tex: [p.id] });
+    app.toast(label + ': ' + r.piece.name, 'pos');
+  };
+  if ($('#fFace')) $('#fFace').onclick = () => { app.commit('Обтачка'); done(addFacing(g, p, cid, Math.max(2, +$('#fFaceW').value || 4)), 'Обтачка'); };
+  if ($('#fBind')) $('#fBind').onclick = () => { app.commit('Бейка'); done(addBinding(g, p, cid, Math.max(0.4, +$('#fBindW').value || 1)), 'Бейка'); };
+}
+// ── подкладка изделия
+function liningHTML(app, g) {
+  const has = g.pieces.filter((p) => p.lining).length;
+  const opts = app.S.materials.map((m) => `<option value="${m.id}" ${m.presetId === 'lining' ? 'selected' : ''}>${esc(m.name)}</option>`).join('');
+  return `<div class="sec"><h3>Подкладка ${has ? `<span class="chip">${has} дет.</span>` : ''}</h3>
+  ${has ? '<button class="sm danger" id="lnDel">Убрать подкладку</button>' : `<div class="row"><select id="lnMat" style="flex:1">${app.S.materials.some((m) => m.presetId === 'lining') ? '' : '<option value="+lining" selected>Подкладочная вискоза (добавить)</option>'}${opts}</select><button class="sm" id="lnAdd">Добавить</button></div>
+  <p class="note">Копии основных деталей из подкладочной ткани со швами изделия; низ на 2 см выше. Кроятся отдельно, в 3D не показываются.</p>`}</div>`;
+}
+function bindLining(app, g) {
+  if ($('#lnDel')) $('#lnDel').onclick = () => { app.commit('Убрать подкладку'); const n = removeLining(g); app.changed({ geo: true, layout: true }); app.toast(`Подкладка убрана (${n} дет.)`); };
+  if ($('#lnAdd')) $('#lnAdd').onclick = () => {
+    app.commit('Подкладка');
+    let mid = $('#lnMat').value;
+    if (mid === '+lining') { const m = makeMaterial('lining'); app.S.materials.push(m); mid = m.id; }
+    const r = addLining(g, mid);
+    if (r.error) { app.toast(r.error, 'neg'); return; }
+    app.updateTex(r.pieces.map((p) => p.id));
+    app.changed({ geo: true, layout: true });
+    app.toast(`Подкладка: ${r.pieces.length} дет.`, 'pos');
+  };
+}
+
 function gradingHTML(g) {
   const gr = (g.grading ||= defaultGrading('M'));
   const sz = sizesOf(g);
@@ -93,7 +140,8 @@ function inspPiece(app, R, p) {
   <dl class="kv"><dt>Площадь</dt><dd>${fmt(Math.abs(area(p.pts)) / 100, 1)} дм² (с припусками ${fmt(Math.abs(area(co)) / 100, 1)})</dd><dt>Масса</dt><dd>${fmt((Math.abs(area(co)) / 1e4) * (mats[p.mat]?.gsm || 0), 0)} г</dd><dt>Габарит</dt><dd>${fmt(bbox(p.pts).w)} × ${fmt(bbox(p.pts).h)} см</dd></dl>
   <div class="row" style="flex-wrap:wrap"><button class="sm" id="pDup">Дублировать</button><button class="sm" id="pMir">Зеркальная копия</button><button class="sm danger" id="pDel">Удалить</button></div></div>
   <div class="sec"><h3>Стороны <span class="help-i" title="Припуск (см), сырой край, резинка (коэф. сборки), сверка длины шва: зелёный — совпадает, красный — расхождение">i</span></h3>
-  <table class="e"><tr><th>сторона</th><th>длина</th><th>припуск</th><th>сыр.</th><th>рез.</th><th>шов</th></tr>${rows}</table></div>
+  <table class="e"><tr><th>сторона</th><th>длина</th><th>припуск</th><th>сыр.</th><th>рез.</th><th>шов</th></tr>${rows}</table>
+  ${edgeFinishHTML(g, p, sel.edge)}</div>
   ${ov ? `<div class="sec"><h3>Накладка</h3><div class="row"><input id="oName" value="${esc(ov.name)}" style="flex:1"><button class="sm danger" id="oDel">×</button></div><div class="row"><label>Ткань</label><select id="oMat" style="flex:1">${app.S.materials.map((m) => `<option value="${m.id}" ${ov.mat === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></div><div class="row"><label>Припуск, см</label><input type="number" step="0.1" id="oSa" value="${ov.sa ?? 1}"></div><p class="note">${fmt(Math.abs(area(ov.pts)) / 100, 1)} дм² · раскладывается отдельно</p></div>` : ''}
   ${pr ? `<div class="sec"><h3>Принт</h3>${ctl('rW', 'Ширина, см', pr.w, 1, 80, 0.5)}${ctl('rRot', 'Поворот, °', pr.rot || 0, -180, 180, 1)}${ctl('rOp', 'Непрозрачность', pr.opacity ?? 1, 0.05, 1, 0.05)}<div class="row"><label>Смешивание</label><select id="rBl"><option value="">обычное</option><option value="multiply" ${pr.blend === 'multiply' ? 'selected' : ''}>умножение (впитался)</option><option value="screen" ${pr.blend === 'screen' ? 'selected' : ''}>экран (светлый)</option></select></div><button class="sm danger" id="rDel">Удалить принт</button></div>` : ''}
   ${(p.hardware || []).length ? `<div class="sec"><h3>Фурнитура · ${p.hardware.length}</h3><button class="sm danger" id="hClr">Убрать всю фурнитуру детали</button></div>` : ''}
@@ -105,6 +153,7 @@ function inspPiece(app, R, p) {
   $('#pDup').onclick = () => { app.commit('Дублировать'); const c = duplicatePiece(g, p, false); app.updateTex([c.id]); app.select({ p: c.id }); app.changed({ geo: true, layout: true }); };
   $('#pMir').onclick = () => { app.commit('Зеркальная копия'); const c = duplicatePiece(g, p, true); app.updateTex([c.id]); app.select({ p: c.id }); app.changed({ geo: true, layout: true }); };
   $('#pDel').onclick = () => deleteSelected(app, true);
+  bindEdgeFinish(app, g, p, sel.edge);
   R.querySelectorAll('[data-edge]').forEach((tr) => (tr.onclick = (e) => { if (e.target.tagName === 'INPUT') return; app.select({ g: g.id, p: p.id, edge: tr.dataset.edge }); }));
   R.querySelectorAll('[data-sa]').forEach((i) => (i.onchange = () => { app.commit('Припуск'); p.meta[i.dataset.sa].sa = Math.max(0, +i.value); app.changed({ layout: true }); }));
   R.querySelectorAll('[data-raw]').forEach((i) => (i.onchange = () => { app.commit('Сырой край'); p.meta[i.dataset.raw].raw = i.checked; app.changed({ tex: [p.id], layout: true }); }));

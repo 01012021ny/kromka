@@ -91,6 +91,12 @@ export function drawDecor(ctx, piece, matsById, images, onImg) {
         for (let t = 0; t < 1; t += 0.12) { const px = a[0] + dx * t, py = a[1] + dy * t, L = 0.2 + r() * 0.5; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + nx * L, py + ny * L); ctx.stroke(); }
       }
       ctx.restore();
+    } else if (m.bound) {
+      // край обработан косой бейкой: полоса готовой ширины по краю + отстрочка
+      const w = m.bound, off = e.map((q, i) => { const a = e[Math.max(0, i - 1)], b = e[Math.min(e.length - 1, i + 1)], dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1; return [q[0] - (dy / l) * w, q[1] + (dx / l) * w]; });
+      ctx.save(); ctx.beginPath(); [...e, ...off.slice().reverse()].forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.closePath();
+      ctx.fillStyle = shade(mat.color, mat.color < '#666666' ? 0.12 : -0.12); ctx.fill(); ctx.restore();
+      stitchAlong(ctx, e, [w - 0.15], thread);
     } else if (m.fold || (m.name === 'шов пояса' && piece.place?.kind === 'band')) {
       stitchAlong(ctx, e, [0.25], thread); // притачной пояс: отстрочка по краям
     } else if (TOPSTITCH[m.name]) {
