@@ -6,7 +6,8 @@
     "build": "node build.mjs",
     "test": "node scripts/test.mjs",
     "typecheck": "tsc -p tsconfig.json",
-    "e2e": "node build.mjs && playwright test"
+    "e2e": "node build.mjs && playwright test",
+    "bench": "node scripts/bench.mjs"
   },
   "keywords": [
     "fashion",

@@ -31,3 +31,18 @@ test('вкладка «Изделия»: удалить изделие цели�
   await page.waitForTimeout(1500);
   expect(await page.evaluate(() => window.__app.sim.N > 0 || window.__app.S.garments.length === 0)).toBe(true);
 });
+
+test('3D рисуется по требованию: в покое кадр не перерисовывается, после правки — да', async ({ page }) => {
+  await openApp(page);
+  const r = await page.evaluate(() => {
+    const v = window.__app.view3d;
+    v._dirty = 0; v._lastRender = performance.now();
+    const idle = v.frame(null, false);
+    v.invalidate();
+    const after = v.frame(null, false);
+    return { idle, after, dpr: v.dpr, dprMax: v.dprMax };
+  });
+  expect(r.idle).toBe(false);
+  expect(r.after).toBe(true);
+  expect(r.dpr).toBeLessThanOrEqual(r.dprMax);
+});

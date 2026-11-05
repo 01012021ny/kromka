@@ -7,11 +7,11 @@ import { SimProxy } from './simproxy.js';
 import { makeMaterial, PRESETS, physics } from './materials.js';
 import { View3D } from './view3d.js';
 import { Editor2D } from './editor2d.js';
-import { nestAll } from './layout.js';
+import { nestAll, collectItems, nestMaterial } from './layout.js';
 import { buildAccessory, makeAcc, METALS } from './accessories.js';
 import { deep, uid, debounce, bbox, setUidBase, fmt } from './util.js';
 import * as UI from './ui.js';
-import { defaultGrading, gradeGarment, sizesOf } from './grading.js';
+import { defaultGrading, gradeGarment, sizesOf, expandSizes } from './grading.js';
 
 const S = {
   body: deep(BODY_DEFAULT),
@@ -43,17 +43,7 @@ const editor = (app.editor = new Editor2D(document.getElementById('c2d'), app));
 
 app.matsById = () => Object.fromEntries(S.materials.map((m) => [m.id, m]));
 // sizes for layout (тираж): qty per size; if nothing set → base size × 1
-app.expandSizes = (g) => {
-  const gr = (g.grading ||= defaultGrading('M'));
-  const out = [];
-  for (const sz of sizesOf(g)) {
-    const q = Math.max(0, Math.round(gr.qty?.[sz] ?? 0));
-    if (!q) continue;
-    out.push({ size: sz, qty: q, pieces: sz === gr.base ? g.pieces : gradeGarment(g, body.m, sz) });
-  }
-  if (!out.length) out.push({ size: gr.base, qty: 1, pieces: g.pieces });
-  return out;
-};
+app.expandSizes = (g) => { g.grading ||= defaultGrading('M'); return expandSizes(g, body.m); };
 app.geoVersion = 0;
 const gradeCache = new Map();
 app.graded = (g, sz) => {
@@ -91,6 +81,7 @@ app.redo = () => { const f = app.future.pop(); if (!f) return; app.history.push(
 
 // ───────── selection ─────────
 app.select = (o) => {
+  view3d.invalidate(3);
   app.sel = { ...o };
   if (o.p && !o.g) { const f = findPiece(S.garments, o.p); if (f) app.sel.g = f.g.id; }
   editor.dirty = true;
@@ -137,7 +128,7 @@ function buildAccessories() {
   view3d.setAccessories(groups);
   if (sim.syncBody) sim.syncBody(S.body);
 }
-app.rebuildAccessories = () => { buildAccessories(); sim.wake(); };
+app.rebuildAccessories = () => { buildAccessories(); sim.wake(); view3d.invalidate(3); };
 function rebuildBody() {
   app.geoVersion++;
   body.build(S.body);
@@ -160,6 +151,7 @@ app.live = () => { app.geoVersion++; const now = performance.now(); if (now - li
 app.liveTex = (p) => { const now = performance.now(); if (now - liveT > 90) { liveT = now; app.updateTex([p.id]); } };
 app.brushLive = () => {};
 app.changed = (o = {}) => {
+  view3d.invalidate(3);
   if (o.geo || o.view || o.grade) app.geoVersion++;
   if (o.tex) app.updateTex(o.tex);
   if (o.allTex) allTextures();
@@ -173,6 +165,7 @@ app.changed = (o = {}) => {
   if (o.geo || o.mats || o.layout || o.grade) scheduleLayout();
 };
 app.setBody = (patch, commit = true) => {
+  view3d.invalidate(3);
   if (commit) app.commit('Манекен');
   Object.assign(S.body, patch);
   rebuildBody();
@@ -181,12 +174,38 @@ app.setBody = (patch, commit = true) => {
 };
 
 // ───────── layout (marker) ─────────
-const scheduleLayout = debounce(() => {
-  try { app.layout = nestAll(S.garments, app.matsById(), { shrink: S.settings.shrinkComp, rotate: S.settings.rotate, gap: S.settings.gap }, app.expandSizes); } catch (e) { console.error(e); app.layout = []; }
+// раскладка — в фоновом потоке (на тираже S+M+L это 1–2 с счёта); #local — в основном, для отладки
+const layoutOpt = () => ({ shrink: S.settings.shrinkComp, rotate: S.settings.rotate, gap: S.settings.gap });
+let layoutWorker = null, layoutSeq = 0;
+if (typeof __LAYOUT_SRC__ === 'string' && typeof Worker !== 'undefined' && location.hash !== '#local') {
+  try { layoutWorker = new Worker(URL.createObjectURL(new Blob([__LAYOUT_SRC__], { type: 'text/javascript' }))); } catch (e) { layoutWorker = null; }
+}
+const layoutDone = (res) => {
+  app.layout = res;
   UI.renderWaste(app);
   if (app.tab === 'layout') UI.renderLeft(app);
   if (app.mode2d === 'layout') UI.drawLayout(app);
+};
+const layoutWaiters = new Map();
+if (layoutWorker) layoutWorker.onmessage = (e) => {
+  const m = e.data;
+  if (m.type === 'nest' && m.seq === layoutSeq) layoutDone(m.res);
+  else if (m.type === 'error') { console.error('layout worker', m.message); if (m.seq === layoutSeq) layoutDone([]); }
+  const w = layoutWaiters.get(m.seq); if (w) { layoutWaiters.delete(m.seq); w(m); }
+};
+// garments уходят в поток как JSON: в них бывают служебные поля с функциями (_ctx физики)
+const plainGarments = () => JSON.parse(JSON.stringify(S.garments.filter((g) => g.visible !== false)));
+const scheduleLayout = debounce(() => {
+  if (layoutWorker) { layoutWorker.postMessage({ type: 'nest', seq: ++layoutSeq, garments: plainGarments(), mats: app.matsById(), opt: layoutOpt(), M: body.m }); return; }
+  try { layoutDone(nestAll(S.garments, app.matsById(), layoutOpt(), app.expandSizes)); } catch (e) { console.error(e); layoutDone([]); }
 }, 450);
+// подбор ширины рулона (несколько раскладок) — тоже в фоне; возвращает Promise со строками [{w, length, util, wasteGrams}]
+app.widthOptions = (matId, widths) => new Promise((resolve) => {
+  if (layoutWorker) { const seq = ++layoutSeq + 1e6; layoutWaiters.set(seq, (m) => resolve(m.rows || [])); layoutWorker.postMessage({ type: 'widths', seq, matId, widths, garments: plainGarments(), mats: app.matsById(), opt: layoutOpt() }); return; }
+  const items = collectItems(S.garments, app.matsById()).find((x) => x.mat.id === matId)?.items || [];
+  const mat = S.materials.find((x) => x.id === matId);
+  resolve(widths.map((w) => [w, nestMaterial(items, { ...mat, width: w }, layoutOpt())]).filter(([, r]) => !r.placed.some((x) => x.fail)).map(([w, r]) => ({ w, length: r.length, util: r.util, wasteGrams: r.wasteGrams })));
+});
 app.scheduleLayout = scheduleLayout;
 
 // ───────── garments / materials ─────────
@@ -381,7 +400,8 @@ function loop(t) {
   const dt = Math.min(0.05, (t - last) / 1000); last = t;
   const t0 = performance.now();
   const moved = sim.step(1 / 60);
-  view3d.frame(sim, moved !== false);
+  // прокси физики сообщает о новых позициях сам; локальный решатель двигает ткань, пока не успокоится
+  view3d.frame(sim, sim.isWorker ? moved === true : !!sim.N && sim.running && !sim.settled);
   fpsAcc += performance.now() - t0; fpsN++;
   if (fpsN >= 20) { fps = 1000 / Math.max(16.7, fpsAcc / fpsN); fpsAcc = 0; fpsN = 0; UI.renderStats(app, fps); }
   void dt;

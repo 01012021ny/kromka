@@ -9,7 +9,10 @@ export class View3D {
   constructor(el, app) {
     this.el = el; this.app = app;
     const r = (this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }));
-    r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    // чёткость: не выше 2× и не выше экрана; на слабой графике снижается сама (см. _adapt)
+    this.dprMax = Math.min(2, window.devicePixelRatio || 1); this.dpr = this.dprMax;
+    r.setPixelRatio(this.dpr);
+    this._dirty = 3; this._lastRender = 0; this._slow = 0; this._fast = 0; this._lastT = 0;
     r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
     r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.25;
     r.outputColorSpace = THREE.SRGBColorSpace;
@@ -47,9 +50,18 @@ export class View3D {
     this.showStrain = false;
     this.hwMeshes = [];
     this._bindPointer();
+    // перерисовка по требованию: любая правка сцены, камеры, указателя помечает кадр
+    this.controls.addEventListener('change', () => this.invalidate());
+    for (const ev of ['pointerdown', 'pointermove', 'wheel']) r.domElement.addEventListener(ev, () => this.invalidate(), { passive: true });
+    for (const k of Object.getOwnPropertyNames(View3D.prototype)) {
+      if (['constructor', 'frame', 'invalidate', '_adapt', '_bindPointer'].includes(k) || typeof this[k] !== 'function') continue;
+      const f = this[k];
+      this[k] = (...a) => { const out = f.apply(this, a); this.invalidate(); return out; };
+    }
     new ResizeObserver(() => this.resize()).observe(el);
     this.resize();
   }
+  invalidate(frames = 2) { this._dirty = Math.max(this._dirty, frames); }
   resize() {
     const w = this.el.clientWidth || 300, h = this.el.clientHeight || 300;
     this.renderer.setSize(w, h, false);
@@ -139,8 +151,27 @@ export class View3D {
       if (this.showStrain) this.updateStrain(sim);
       this.updateHardware(sim);
     }
-    this.controls.update();
+    if (sim && sim.N && moved) this._dirty = Math.max(this._dirty, 1);
+    if (this.controls.update()) this._dirty = Math.max(this._dirty, 2);
+    const now = performance.now();
+    // в покое рисуем 4 кадра/с (страховка от пропущенной пометки), иначе — только когда что-то изменилось
+    if (this._dirty <= 0 && now - this._lastRender < 250) { this._lastT = 0; return false; }
     this.renderer.render(this.scene, this.camera);
+    this._adapt(now);
+    this._lastRender = now; this._dirty = Math.max(0, this._dirty - 1);
+    return true;
+  }
+  // слабая графика (встроенная UHD и т. п.): если кадры подряд идут медленнее ~30 к/с — снижаем чёткость шагами до 1×;
+  // долго быстро — возвращаем
+  _adapt(now) {
+    const dt = this._lastT ? now - this._lastT : 0;
+    this._lastT = now;
+    if (!dt || dt > 250) return;
+    if (dt > 34) { this._slow++; this._fast = 0; } else if (dt < 20) { this._fast++; this._slow = Math.max(0, this._slow - 1); }
+    let next = this.dpr;
+    if (this._slow > 45 && this.dpr > 1) next = Math.max(1, this.dpr - 0.25);
+    else if (this._fast > 600 && this.dpr < this.dprMax) next = Math.min(this.dprMax, this.dpr + 0.25);
+    if (next !== this.dpr) { this.dpr = next; this.renderer.setPixelRatio(next); this.resize(); this._slow = 0; this._fast = 0; }
   }
   setStrain(on) {
     this.showStrain = on;

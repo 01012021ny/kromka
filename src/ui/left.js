@@ -4,7 +4,6 @@ import { PRESETS, CONS, describe, compString, makeMaterial } from '../materials.
 import { MEAS_LABELS } from '../body.js';
 import { ACC_TYPES, makeAcc } from '../accessories.js';
 import { esc, fmt } from '../util.js';
-import { collectItems, nestMaterial } from '../layout.js';
 import { stockFit } from '../cost.js';
 import { $, ctl, bindCtl } from './controls.js';
 import { TOOLS, setTool, setMode } from './toolbar.js';
@@ -185,11 +184,12 @@ function leftLayout(app, L) {
   L.querySelectorAll('[data-w]').forEach((i) => (i.onchange = () => { const m = S.materials.find((x) => x.id === i.dataset.w); m.width = Math.max(20, +i.value); app.scheduleLayout(); }));
   L.querySelectorAll('[data-wopt]').forEach((b) => (b.onclick = () => {
     const m = S.materials.find((x) => x.id === b.dataset.wopt);
-    const items = collectItems(S.garments, app.matsById()).find((x) => x.mat.id === m.id)?.items || [];
-    const rows = [];
-    for (const w of [90, 110, 120, 135, 140, 150, 160, 180]) { const r = nestMaterial(items, { ...m, width: w }, { shrink: S.settings.shrinkComp, rotate: S.settings.rotate, gap: S.settings.gap }); if (!r.placed.some((x) => x.fail)) rows.push([w, r]); }
-    const best = rows.reduce((a, b) => (!a || b[1].util > a[1].util ? b : a), null);
-    document.getElementById('wopt_' + m.id).innerHTML = `<table class="e"><tr><th>ширина</th><th>длина</th><th>исп.</th><th>отходы</th><th></th></tr>${rows.map(([w, r]) => `<tr${best && best[0] === w ? ' class="sel"' : ''}><td class="m">${w} см</td><td class="m">${fmt(r.length / 100, 2)} м</td><td class="m ${r.util >= 0.85 ? 'pos' : r.util < 0.72 ? 'neg' : ''}">${fmt(r.util * 100, 0)}%</td><td class="m neg">${fmt(r.wasteGrams, 0)} г</td><td><button class="sm ghost" data-setw="${w}">выбрать</button></td></tr>`).join('')}</table>`;
-    document.getElementById('wopt_' + m.id).querySelectorAll('[data-setw]').forEach((x) => (x.onclick = () => { m.width = +x.dataset.setw; app.scheduleLayout(); }));
+    const box = document.getElementById('wopt_' + m.id);
+    box.innerHTML = '<p class="note">Перебираю ширины…</p>';
+    app.widthOptions(m.id, [90, 110, 120, 135, 140, 150, 160, 180]).then((rows) => {
+      const best = rows.reduce((a, r) => (!a || r.util > a.util ? r : a), null);
+      box.innerHTML = `<table class="e"><tr><th>ширина</th><th>длина</th><th>исп.</th><th>отходы</th><th></th></tr>${rows.map((r) => `<tr${best && best.w === r.w ? ' class="sel"' : ''}><td class="m">${r.w} см</td><td class="m">${fmt(r.length / 100, 2)} м</td><td class="m ${r.util >= 0.85 ? 'pos' : r.util < 0.72 ? 'neg' : ''}">${fmt(r.util * 100, 0)}%</td><td class="m neg">${fmt(r.wasteGrams, 0)} г</td><td><button class="sm ghost" data-setw="${r.w}">выбрать</button></td></tr>`).join('')}</table>`;
+      box.querySelectorAll('[data-setw]').forEach((x) => (x.onclick = () => { m.width = +x.dataset.setw; app.scheduleLayout(); }));
+    });
   }));
 }

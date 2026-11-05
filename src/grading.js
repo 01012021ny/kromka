@@ -93,6 +93,19 @@ export function gradeGarment(g, M, size) {
   });
 }
 
+// тираж для раскладки: количество по размерам; если ничего не задано — базовый размер × 1
+export function expandSizes(g, M) {
+  const gr = g.grading || defaultGrading('M');
+  const out = [];
+  for (const sz of sizesOf(g)) {
+    const q = Math.max(0, Math.round(gr.qty?.[sz] ?? 0));
+    if (!q) continue;
+    out.push({ size: sz, qty: q, pieces: sz === gr.base ? g.pieces : gradeGarment(g, M, sz) });
+  }
+  if (!out.length) out.push({ size: gr.base, qty: 1, pieces: g.pieces });
+  return out;
+}
+
 export function sizesOf(g) {
   const gr = g.grading || defaultGrading();
   return SIZES.filter((s) => gr.sizes.includes(s) || s === gr.base);
