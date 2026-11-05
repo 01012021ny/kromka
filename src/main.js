@@ -128,7 +128,15 @@ function buildAccessories() {
   view3d.setAccessories(groups);
   if (sim.syncBody) sim.syncBody(S.body);
 }
-app.rebuildAccessories = () => { buildAccessories(); sim.wake(); view3d.invalidate(3); };
+// смена обуви меняет коллизию стоп: одежду надеваем заново — штанины опустятся поверх новой обуви, а не окажутся внутри
+const shoeSigOf = () => JSON.stringify(S.accessories.filter((a) => a.type === 'shoes' && a.visible !== false).map((a) => a.p));
+let shoeSig = null;
+app.rebuildAccessories = () => {
+  buildAccessories(); sim.wake(); view3d.invalidate(3);
+  const sig = shoeSigOf();
+  if (shoeSig !== null && sig !== shoeSig && sim.N) rebuildSim(true);
+  shoeSig = sig;
+};
 function rebuildBody() {
   app.geoVersion++;
   body.build(S.body);
@@ -353,12 +361,13 @@ app.onClothDown = (hit, e) => {
     paint3d = { rec, pts: [uv2] };
     return true;
   }
-  if (e.shiftKey || app.tool === 'select') {
-    if (!e.shiftKey && !e.altKey) { app.select({ g: rec.garment.id, p: rec.piece.id }); }
+  if (e.shiftKey || app.tool === 'select' || app.grabMode) {
+    const pull = e.altKey || app.grabMode;
+    if (!e.shiftKey && !pull) { app.select({ g: rec.garment.id, p: rec.piece.id }); }
     const f = hit.face, ids = [f.a, f.b, f.c];
     let best = ids[0], bd = Infinity;
     for (const i of ids) { const k = (rec.off + i) * 3; const d = (sim.x[k] - hit.point.x) ** 2 + (sim.x[k + 1] - hit.point.y) ** 2 + (sim.x[k + 2] - hit.point.z) ** 2; if (d < bd) { bd = d; best = i; } }
-    if (!e.altKey) return false; // plain click = select (and orbit); Alt+drag = pull fabric
+    if (!pull) return false; // plain click = select (and orbit); Alt+drag или режим «✋ Тянуть» = тянуть ткань
     sim.grab = { i: rec.off + best, p: [hit.point.x, hit.point.y, hit.point.z] };
     view3d.camera.getWorldDirection(tmpV);
     grabPlane.setFromNormalAndCoplanarPoint(tmpV, hit.point);
@@ -473,7 +482,7 @@ function boot() {
     for (const g of S.garments) { g.grading ||= defaultGrading('M'); fillParams(g); for (const p of g.pieces) if (!p.base) p.base = p.name.split(' · ')[0]; }
     for (const id in S.images) { const im = new Image(); im.onload = () => { app.imgRatio[id] = im.height / im.width; app.updateTex(S.garments.flatMap((g) => g.pieces.filter((p) => p.prints.some((r) => r.img === id)).map((p) => p.id))); }; im.src = S.images[id]; }
     body.build(S.body);
-    buildAccessories(); allTextures(); rebuildSim(true);
+    buildAccessories(); shoeSig = shoeSigOf(); allTextures(); rebuildSim(true);
   } else {
     starter();
   }
@@ -488,7 +497,7 @@ function starter() {
   app.ensureMaterial('jer260');
   const lth = app.ensureMaterial('horse12');
   S.accessories.push({ ...makeAcc('shoes', lth.id), p: { style: 'high', toe: 'round', shaft: 17, sole: 3.4, heel: 0, flare: 0.8, laces: 1, soleColor: '#e9e5dc' } });
-  buildAccessories();
+  buildAccessories(); shoeSig = shoeSigOf();
   const pants = app.addGarment('dropc');
   const top = app.addGarment('long');
   const ecru = S.materials.find((m) => m.presetId === 'vis180');

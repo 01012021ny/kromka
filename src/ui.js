@@ -23,7 +23,8 @@ export function init(app) {
   renderTools(app);
   // 3D bar
   $('#bPlay').onclick = () => { app.sim.running = !app.sim.running; if (app.sim.running) app.sim.wake(); app.updatePlay(); };
-  $('#bResew').onclick = () => { app.rebuildSim(true); app.toast('Изделия заново сшиты из лекал'); };
+  $('#bResew').onclick = () => { app.rebuildSim(true); app.toast('Изделия заново надеты и сшиты из лекал'); };
+  $('#bGrab').onclick = (e) => { app.grabMode = !app.grabMode; e.target.classList.toggle('on', app.grabMode); app.toast(app.grabMode ? 'Тяните ткань мышью — она живёт по физике; камера — перетаскиванием мимо ткани' : 'Режим «тянуть ткань» выключен'); };
   $('#bStrain').onclick = (e) => { const on = !app.view3d.showStrain; app.view3d.setStrain(on); e.target.classList.toggle('on', on); $('#legend').style.display = on ? 'block' : 'none'; };
   $('#quality').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; app.S.settings.quality = +b.dataset.q; [...$('#quality').children].forEach((x) => x.classList.toggle('on', x === b)); app.rebuildSim(); });
   document.querySelectorAll('[data-cam]').forEach((b) => (b.onclick = () => {

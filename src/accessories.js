@@ -59,6 +59,24 @@ function shoeHalfWidth(u, toe) {
   return Math.max(0.25, w);
 }
 
+// геометрия обуви одной ноги (без мешей): длина, носок, подошва, контур — общая для модели, коллизии и проверок
+export function shoeShape(body, leg, p) {
+  const L = body.footLen + 2.2 + (p.toe === 'point' ? 4 : p.toe === 'square' ? 1.5 : 0);
+  const sole = p.sole, heelH = p.heel, heelZ = leg.heel.z - 2.2, sg = leg.sg, x0 = leg.ank.x;
+  const footTop = (u) => {
+    if (u < 0.45) return 9.5 + heelH * 0.3;
+    const t = (u - 0.45) / 0.55;
+    const toeH = p.toe === 'point' ? 3 : p.toe === 'square' ? 4.4 : 4.8;
+    return lerp(9.5, toeH, Math.pow(t, 0.8));
+  };
+  const lift = (u) => sole + heelH * (1 - clamp((u - 0.25) / 0.35, 0, 1)) + (u > 0.82 ? ((u - 0.82) / 0.18) ** 2 * 1.4 : 0);
+  const halfW = (u) => shoeHalfWidth(u, p.toe) + 0.4;
+  const cx = (u) => x0 + sg * u * 1.2, cz = (u) => heelZ + u * L;
+  // точка внутри объёма обуви (без голенища) глубже tol см?
+  const inside = (x, y, z, tol = 0) => { const u = (z - heelZ) / L; if (u < tol / L || u > 1 - tol / L) return false; return Math.abs(x - cx(u)) < halfW(u) - tol && y < lift(u) + footTop(u) - tol && y > -0.5; };
+  return { L, sole, heelH, heelZ, sg, x0, footTop, lift, halfW, cx, cz, inside };
+}
+
 export function buildShoe(body, leg, p, upperMat, soleMat) {
   const grp = new THREE.Group();
   const L = body.footLen + 2.2 + (p.toe === 'point' ? 4 : p.toe === 'square' ? 1.5 : 0);
@@ -126,7 +144,7 @@ export function buildShoe(body, leg, p, upperMat, soleMat) {
       const g = loftGeom(sr2, false, false);
       const m = new THREE.Mesh(g, upperMat.clone()); m.material.side = THREE.DoubleSide;
       grp.add(m);
-      body.extraCaps.push(mkCap(V(x0, 6, leg.ank.z), V(lj[2].p.x, shaftTop, lj[2].p.z), at(8).r + 0.9, at(shaftTop).r + 0.9 + p.flare));
+      body.extraCaps.push(Object.assign(mkCap(V(x0, 6, leg.ank.z), V(lj[2].p.x, shaftTop, lj[2].p.z), at(8).r + 0.9, at(shaftTop).r + 0.9 + p.flare), { foot: shaftTop < 30 }));
     }
   }
   // laces
@@ -139,8 +157,17 @@ export function buildShoe(body, leg, p, upperMat, soleMat) {
       grp.add(b);
     }
   }
-  // collider for the foot
-  body.extraCaps.push(mkCap(V(x0, sole + 3.5, heelZ + 3), V(x0 + sg * 1.2, sole + 2.5, heelZ + L - 3), 4.6, 3.6));
+  // коллизия обуви по её форме: решётка капсул 2 (лево/право) × 3 (низ/середина/верх) вдоль стопы, от пола до верха,
+  // с запасом 0,3 см — ткань ложится на обувь, а не проходит сквозь (одна капсула не покрывала ни подошву, ни верх у пятки)
+  const sh = shoeShape(body, leg, p);
+  const us = [0.04, 0.28, 0.52, 0.76, 0.97];
+  const sec = us.map((u) => { const w = sh.halfW(u) + 0.3, top = sh.lift(u) + sh.footTop(u) + 0.3, r = Math.max(0.8, Math.min(w, top / 2)); return { u, w, top, r }; });
+  for (const sx of [-1, 1]) for (const lev of [0, 0.5, 1]) {
+    for (let i = 0; i < sec.length - 1; i++) {
+      const pt = (q) => V(sh.cx(q.u) + sx * Math.max(0, q.w - q.r), q.r + (Math.max(q.r, q.top - q.r) - q.r) * lev, sh.cz(q.u));
+      body.extraCaps.push(Object.assign(mkCap(pt(sec[i]), pt(sec[i + 1]), sec[i].r, sec[i + 1].r), { foot: true }));
+    }
+  }
   grp.traverse((o) => { if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; } });
   return grp;
 }

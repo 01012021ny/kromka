@@ -263,7 +263,7 @@ export class Body {
     for (const l of this.legs) {
       capsFrom(l.joints);
       const heel = V(l.ank.x, 3.2, l.ank.z - 4.5), toe = V(l.ank.x + 1.2 * l.sg, 2.4, l.ank.z - 4.5 + this.footLen - 4.5);
-      caps.push(mkCap(heel, toe, 3.3, 2.6));
+      caps.push(Object.assign(mkCap(heel, toe, 3.3, 2.6), { foot: true })); // стопа: штанина ниже её верха надевается подвёрнутой (sim.placePoint)
       caps.push(mkCap(V(l.ank.x, Y.ankle + 1, l.ank.z), heel, rAn, 3.3));
       l.heel = heel; l.toe = toe;
     }

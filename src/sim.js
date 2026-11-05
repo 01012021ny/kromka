@@ -157,6 +157,14 @@ export function placementCtx(garment, body, vis) {
     A *= k; B *= k;
     (ctx.band ||= {})[p.id] = { A, B, map: ellipseTable(A, B), xc: arc ? 0 : (b.x0 + b.x1) / 2, arc };
   }
+  // «надеть приподнятыми»: голень штанины от колена вниз сжимается гармошкой выше верха стопы/обуви, затем ткань сама
+  // расправляется вниз и садится на обувь (а не появляется внутри неё и не застревает между подошвой и полом)
+  let ft = 0;
+  for (const c of [...(body.caps || []), ...(body.extraCaps || [])]) if (c.foot) ft = Math.max(ft, c.ay + c.ra, c.ay + c.dy + c.rb);
+  if (ctx.legs && ft > 0 && ft < 32) {
+    const ymin = Math.min(...legs.map((p) => bbox(p.pts).y0)), C = ft + 1.5, H = Math.max(C + 8, body.m.y.crotch - 4); // сжатие на всю длину от шага — мягче, без заломов
+    if (ymin < C) ctx.legLift = { C, H, k: (H - C) / Math.max(1, H - ymin), ymin };
+  }
   ctx.neckR = body.m.neck / (2 * Math.PI) + gap;
   return ctx;
 }
@@ -178,16 +186,18 @@ export function placePoint(piece, x, y, ctx, body, out) {
     out[1] = y;
   } else if (pl.kind === 'leg' && ctx.legs) {
     const L = ctx.legs[pl.limb] || ctx.legs.L;
-    const t = clamp((L.top.y - y) / (L.top.y - L.bot.y), -0.5, 1.2);
+    const lf = ctx.legLift;
+    const yy = lf && y < lf.H ? lf.C + (y - lf.ymin) * lf.k : y;
+    const t = clamp((L.top.y - yy) / (L.top.y - L.bot.y), -0.5, 1.2);
     const cx = L.top.x + (L.bot.x - L.top.x) * t, cz = L.top.z + (L.bot.z - L.top.z) * t;
     const back = pl.side === 'back';
     const [fa, fb] = L.exF(y), [ba, bb] = L.exB(y);
     const C = Math.max(1, (fb - fa) + (bb - ba));
-    const R = Math.max(limbRadius(L.leg.joints, y) * 1.05 + 1.0 + ctx.layer * 0.6, C / (2 * Math.PI));
+    const R = Math.max(limbRadius(L.leg.joints, yy) * 1.05 + 1.0 + ctx.layer * 0.6, C / (2 * Math.PI));
     const mid = back ? (ba + bb) / 2 : (fa + fb) / 2;
     const th = (x - mid) / R;
     const s = back ? -1 : 1;
-    out[0] = cx + s * R * Math.sin(th); out[1] = y; out[2] = cz + s * R * Math.cos(th);
+    out[0] = cx + s * R * Math.sin(th); out[1] = yy; out[2] = cz + s * R * Math.cos(th);
   } else if (pl.kind === 'arm' && ctx.arms) {
     const A = ctx.arms[pl.limb] || ctx.arms.L;
     const a = A.arm;

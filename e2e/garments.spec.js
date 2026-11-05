@@ -84,3 +84,26 @@ test('узлы: лонгслив с воронкой и манжетами из 
   await page.waitForTimeout(1500);
   expect(await page.evaluate(() => { const x = window.__app.sim.x; for (let i = 0; i < x.length; i++) if (!Number.isFinite(x[i])) return false; return true; })).toBe(true);
 });
+
+test('✋ Тянуть: ткань хватается мышью без Alt; смена обуви — одежда надевается заново', async ({ page }) => {
+  await openApp(page, '#local');
+  await page.click('#bGrab');
+  await expect(page.locator('#bGrab')).toHaveClass(/on/);
+  await page.waitForTimeout(1500);
+  const pt = await page.evaluate(() => {
+    const a = window.__app, v = a.view3d, r = a.sim.pieces.find((q) => q.piece.place.kind === 'leg' && q.piece.place.side === 'front');
+    const i = r.off + Math.floor(r.n * 0.55);
+    const V = new v.camera.position.constructor(a.sim.x[3 * i], a.sim.x[3 * i + 1], a.sim.x[3 * i + 2]).project(v.camera);
+    const rect = v.renderer.domElement.getBoundingClientRect();
+    return { x: rect.left + ((V.x + 1) / 2) * rect.width, y: rect.top + ((1 - V.y) / 2) * rect.height };
+  });
+  await page.mouse.move(pt.x, pt.y); await page.mouse.down();
+  await page.mouse.move(pt.x + 40, pt.y + 10, { steps: 6 });
+  expect(await page.evaluate(() => !!window.__app.sim.grab)).toBe(true);
+  await page.mouse.up();
+  expect(await page.evaluate(() => window.__app.sim.grab)).toBeFalsy();
+  // смена обуви → одежда надевается заново (свежая сборка: t сбрасывается)
+  const t0 = await page.evaluate(() => window.__app.sim.t);
+  await page.evaluate(() => { const a = window.__app, s = a.S.accessories.find((x) => x.type === 'shoes'); s.p.style = 'low'; s.p.shaft = 0; a.rebuildAccessories(); });
+  expect(await page.evaluate(() => window.__app.sim.t)).toBeLessThan(t0);
+});

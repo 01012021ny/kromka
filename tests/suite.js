@@ -11,6 +11,7 @@ import { dxf, plt, zip, exportSets, shrinkScale } from '../src/export.js';
 import { patternSpec, sampleShrink, compoundShrink } from '../src/spec.js';
 import { garmentCost, stockFit } from '../src/cost.js';
 import { addFacing, addBinding, addLining, removeLining } from '../src/finish.js';
+import { makeAcc, buildAccessory, shoeShape } from '../src/accessories.js';
 import { bbox } from '../src/util.js';
 
 let pass = 0, fail = 0;
@@ -274,6 +275,30 @@ console.log('Узлы: стойка, воронка, манжеты');
     const sim = drape([g], { [mat.id]: mat }, 240);
     let nan = 0; for (let i = 0; i < sim.N * 3; i++) if (!isFinite(sim.x[i])) nan++;
     ok('манжеты: 3D без NaN', nan === 0);
+  }
+}
+
+console.log('Брюки поверх обуви');
+{
+  const shoeBody = new Body(new THREE.Scene()); shoeBody.build(BODY_DEFAULT);
+  const m3 = { leather: new THREE.MeshStandardMaterial(), sole: new THREE.MeshStandardMaterial(), knit: new THREE.MeshStandardMaterial(), metal: () => new THREE.MeshStandardMaterial() };
+  for (const style of ['high', 'low']) {
+    const sh = makeAcc('shoes', 'x'); sh.p.style = style; sh.p.shaft = style === 'high' ? 16 : 0;
+    shoeBody.extraCaps = [];
+    buildAccessory(sh, shoeBody, m3, { belts: [] });
+    const t0 = performance.now(); shoeBody.buildGrid(); const tg = performance.now() - t0;
+    const vols = shoeBody.legs.map((l) => shoeShape(shoeBody, l, sh.p));
+    for (const id of ['jeans', 'flare']) {
+      const pr = GARMENT_PRESETS.find((p) => p.id === id), mat = makeMaterial(pr.mat), out = GENERATORS.pants(shoeBody.m, pr.p);
+      const g = { id, name: id, gen: 'pants', params: pr.p, pieces: out.pieces, seams: out.seams, layer: 0 };
+      for (const p of g.pieces) p.mat = mat.id;
+      for (const sm of g.seams) sm.rev = seamRev(g, sm, shoeBody);
+      const sim = new Sim(shoeBody); sim.build([g], { [mat.id]: mat }, 2.6);
+      for (let f = 0; f < 360; f++) sim.step(1 / 60);
+      let inside = 0, nan = 0, ymin = 1e9;
+      for (let i = 0; i < sim.N; i++) { const x = sim.x[3 * i], y = sim.x[3 * i + 1], z = sim.x[3 * i + 2]; if (!isFinite(y)) nan++; ymin = Math.min(ymin, y); if (vols.some((v) => v.inside(x, y, z, 0.5))) inside++; }
+      ok(`${id} + кеды (${style}): ткань не внутри обуви (глубже 5 мм) и садится на неё`, inside === 0 && nan === 0 && ymin < 16, `внутри ${inside}, низ ${ymin.toFixed(1)} см, сетка коллизии ${tg.toFixed(0)} мс`);
+    }
   }
 }
 
