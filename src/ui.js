@@ -4,11 +4,13 @@ import { doExport } from './ui/exports.js';
 import { HELP } from './ui/help.js';
 import { deleteSelected } from './ui/inspector.js';
 import { renderLeft } from './ui/left.js';
+import { openLibrary, closeLibrary, libraryOpen } from './ui/library.js';
 import { TOOLS, renderTools, setTool, setMode } from './ui/toolbar.js';
 
 export { setTool } from './ui/toolbar.js';
 export { renderLeft, renderBodyReadout, renderTree } from './ui/left.js';
 export { renderRight } from './ui/inspector.js';
+export { pushRecent, openLibrary } from './ui/library.js';
 export { renderStats, renderWaste } from './ui/status.js';
 export { drawLayout } from './ui/layoutview.js';
 
@@ -25,6 +27,12 @@ export function init(app) {
   $('#bPlay').onclick = () => { app.sim.running = !app.sim.running; if (app.sim.running) app.sim.wake(); app.updatePlay(); };
   $('#bResew').onclick = () => { app.rebuildSim(true); app.toast('Изделия заново надеты и сшиты из лекал'); };
   $('#bGrab').onclick = (e) => { app.grabMode = !app.grabMode; e.target.classList.toggle('on', app.grabMode); app.toast(app.grabMode ? 'Тяните ткань мышью — она живёт по физике; камера — перетаскиванием мимо ткани' : 'Режим «тянуть ткань» выключен'); };
+  const fitBtn = () => $('#bFit').classList.toggle('on', app.S.settings.holdFit !== false);
+  $('#bFit').onclick = () => {
+    app.S.settings.holdFit = app.S.settings.holdFit === false; app.sim.holdFit = app.S.settings.holdFit; app.sim.wake(); fitBtn();
+    app.toast(app.S.settings.holdFit ? 'Посадка держится: пояс и плечи на задуманной высоте' : 'Посадка не держится: ткань сползает под весом, как без пояса');
+  };
+  app.syncFit = () => { app.sim.holdFit = app.S.settings.holdFit !== false; fitBtn(); };
   $('#bStrain').onclick = (e) => { const on = !app.view3d.showStrain; app.view3d.setStrain(on); e.target.classList.toggle('on', on); $('#legend').style.display = on ? 'block' : 'none'; };
   $('#quality').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; app.S.settings.quality = +b.dataset.q; [...$('#quality').children].forEach((x) => x.classList.toggle('on', x === b)); app.rebuildSim(); });
   document.querySelectorAll('[data-cam]').forEach((b) => (b.onclick = () => {
@@ -74,8 +82,11 @@ export function init(app) {
   $('#rClose').onclick = () => app.togglePanel('r', false); $('#rOpen').onclick = () => app.togglePanel('r', true);
   panels();
   // keys
+  $('#libWin').onclick = (e) => { if (e.target.id === 'libWin') closeLibrary(); };
   window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && libraryOpen()) { closeLibrary(); return; }
     if (e.target.closest && e.target.closest('input,textarea,select')) return;
+    if (e.code === 'KeyL' && !e.ctrlKey && !e.metaKey && !e.altKey) { libraryOpen() ? closeLibrary() : openLibrary(app); return; }
     // по коду клавиши — работает и в русской раскладке (х / ъ)
     if (!e.ctrlKey && !e.metaKey && (e.code === 'BracketLeft' || e.code === 'BracketRight')) { app.togglePanel(e.code === 'BracketLeft' ? 'l' : 'r'); return; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? app.redo() : app.undo(); return; }

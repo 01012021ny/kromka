@@ -73,7 +73,8 @@ test('обработка краёв: обтачка горловины, бейк
 
 test('узлы: лонгслив с воронкой и манжетами из каталога, стойка параметром', async ({ page }) => {
   await openApp(page, '#local');
-  await page.click('[data-add=funnel]');
+  await page.click('#libOpen');
+  await page.click('#libList [data-add=funnel]');
   const g = await page.evaluate(() => { const g = window.__app.S.garments.find((x) => x.preset === 'funnel'); return { id: g.id, names: g.pieces.map((p) => p.name) }; });
   expect(g.names).toEqual(expect.arrayContaining(['Воронка', 'Воронка (внутренняя)', 'Манжета (лев.)', 'Манжета (прав.)']));
   await expect(page.locator('.steps-list')).toContainText('Воротник-воронка');

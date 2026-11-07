@@ -1,8 +1,8 @@
 // Regression suite: physics holds garments on the body, sleeves wrap arms, grading keeps seams matched,
 // cutting preserves area, nesting places every piece, DXF has a block per piece.
 import * as THREE from 'three';
-import { Body, BODY_DEFAULT } from '../src/body.js';
-import { GARMENT_PRESETS, GENERATORS, cutPiece, edgeLen, pieceArea, edgeK, seamLengths, edgePts, cutOutline, sewingSteps } from '../src/patterns.js';
+import { Body, BODY_DEFAULT, measure } from '../src/body.js';
+import { GARMENT_PRESETS, GENERATORS, adaptParams, fitSnap, cutPiece, edgeLen, pieceArea, edgeK, seamLengths, edgePts, cutOutline, sewingSteps } from '../src/patterns.js';
 import { Sim, seamRev } from '../src/sim.js';
 import { makeMaterial } from '../src/materials.js';
 import { gradeGarment, defaultGrading } from '../src/grading.js';
@@ -410,6 +410,55 @@ console.log('Молнии и фурнитура рядами');
   fl.strokes = [];
   ok('бегунок без молнии подчищается', pruneZipPulls(t).length === 1 && !fl.hardware.some((h) => h.zipOf));
   void mat;
+}
+
+console.log('Размер и посадка: манекен, якоря посадки, слои');
+{
+  // SDF ноги совпадает с видимой ногой (раньше плавное объединение соседних капсул раздувало ногу на ~1,4 см)
+  const o = [0, 0, 0], legs = [];
+  body.group.traverse((m) => { if (m.isMesh && m.geometry.type === 'BufferGeometry') legs.push(m); });
+  const v = new THREE.Vector3(); let sum = 0, n = 0;
+  for (const m of legs) { m.updateMatrixWorld(true); const pos = m.geometry.attributes.position; for (let k = 0; k < pos.count; k++) { v.fromBufferAttribute(pos, k).applyMatrix4(m.matrixWorld); if (v.y > body.m.y.crotch - 4 || v.y < body.m.y.ankle + 4 || Math.abs(v.x) < 4) continue; sum += body.sdf(v.x, v.y, v.z, o); n++; } }
+  ok('коллизия ноги совпадает с видимой ногой (±3 мм)', n > 200 && Math.abs(sum / n) < 0.3, `средн ${(sum / n).toFixed(2)} см, ${n} точек`);
+  // параметры карточек переносятся на другую фигуру с сохранением пропорций
+  const ref = fitSnap(body.m), mb = new Body(null); mb.build({ ...BODY_DEFAULT, sex: 1, height: 186, weight: 80, bf: 15 }, { noGrid: true });
+  const to = fitSnap(mb.m), jp = GARMENT_PRESETS.find((p) => p.id === 'jeans').p, lp = GARMENT_PRESETS.find((p) => p.id === 'long').p;
+  const ja = adaptParams('pants', jp, ref, to), la = adaptParams('top', lp, ref, to);
+  ok('на той же фигуре параметры не меняются', JSON.stringify(adaptParams('pants', jp, ref, fitSnap(body.m))) === JSON.stringify(jp));
+  ok('на высокой мужской фигуре: длиннее брюки и рукава, шире колено на разницу обхватов', ja.len > jp.len + 3 && la.sleeve > lp.sleeve && Math.abs(ja.knee - jp.knee - (to.knee - ref.knee)) < 0.6 && ja.ease === jp.ease, `длина ${jp.len}→${ja.len}, колено ${jp.knee}→${ja.knee}, рукав ${lp.sleeve}→${la.sleeve}`);
+  // drape с нормалями после шага — как в приложении (поток физики считает их каждый кадр)
+  const drapeN = (gs, mats, steps, fit = true) => { const sim = new Sim(body); sim.holdFit = fit; sim.build(gs, mats, 2.6); for (let f = 0; f < steps; f++) { sim.step(1 / 60); sim.computeNormals(); } return sim; };
+  const waistSlip = (sim) => { let s = 0, c = 0; for (const r of sim.pieces) { if (r.piece.place.kind !== 'leg' && r.piece.place.kind !== 'torso') continue; const v2 = r.mesh.v2; let ym = -1e9; for (let i = 0; i < r.n; i++) ym = Math.max(ym, v2[2 * i + 1]); for (let i = 0; i < r.n; i++) if (v2[2 * i + 1] > ym - 3) { s += sim.x[3 * (r.off + i) + 1] - v2[2 * i + 1]; c++; } } return s / c; };
+  for (const id of ['jeans', 'skirt']) {
+    const { g, mat } = make(id);
+    const on = waistSlip(drapeN([g], { [mat.id]: mat }, 300)), off = waistSlip(drapeN([g], { [mat.id]: mat }, 300, false));
+    ok(`${id}: пояс держится на задуманной высоте (без якорей сползал)`, on > -1.2 && off < on - 1.5, `с посадкой ${on.toFixed(1)} см, без ${off.toFixed(1)} см`);
+  }
+  // два верха с одинаковым слоем: у каждого свой ранг, внешний не прорастает сквозь внутренний
+  const tangled = (sim, gIn, gOut) => {
+    const ins = [], outs = [];
+    for (const r of sim.pieces) for (let i = r.off; i < r.off + r.n; i++) (r.garment === gIn ? ins : r.garment === gOut ? outs : []).push(i);
+    const x = sim.x, ow = sim.outward; let bad = 0;
+    for (const i of outs) { let best = 1e9, bs = 0; for (const j of ins) { const dx = x[3 * i] - x[3 * j], dy = x[3 * i + 1] - x[3 * j + 1], dz = x[3 * i + 2] - x[3 * j + 2]; const sN = dx * ow[3 * j] + dy * ow[3 * j + 1] + dz * ow[3 * j + 2]; const lat = dx * dx + dy * dy + dz * dz - sN * sN; if (lat < 2.56 && Math.abs(sN) < 4 && lat < best) { best = lat; bs = sN; } } if (best < 1e9 && bs < -0.3) bad++; }
+    return { bad, n: outs.length };
+  };
+  const A = make('tee'), B = make('long');
+  A.g.layer = 1; B.g.layer = 1; B.mat.id = 'm-long';
+  for (const p of B.g.pieces) p.mat = B.mat.id;
+  const sim2 = drapeN([A.g, B.g], { [A.mat.id]: A.mat, [B.mat.id]: B.mat }, 300);
+  const t1 = tangled(sim2, A.g, B.g);
+  ok('два верха в одном слое: позже добавленный снаружи, не перепутаны', t1.bad < t1.n * 0.02 && sim2.pieces.find((r) => r.garment === B.g).layer > sim2.pieces.find((r) => r.garment === A.g).layer, `перепутано ${t1.bad} из ${t1.n}`);
+  // захват пятном: резкий рывок внешней вещи внутрь не оставляет её под нижней после отпускания
+  let gi = -1, bz = -1e9;
+  for (const r of sim2.pieces) if (r.garment === B.g && r.piece.name === 'Перед') for (let i = r.off; i < r.off + r.n; i++) { const y = sim2.x[3 * i + 1]; if (Math.abs(y - 100) < 3 && sim2.x[3 * i + 2] > bz) { bz = sim2.x[3 * i + 2]; gi = i; } }
+  const p0 = [sim2.x[3 * gi], sim2.x[3 * gi + 1], sim2.x[3 * gi + 2]];
+  for (let f = 0; f < 8; f++) { const t = f / 7; sim2.grab = { i: gi, p: [p0[0] + 8 * t, p0[1] - 10 * t, p0[2] - 14 * t] }; sim2.wake(); sim2.step(1 / 60); sim2.computeNormals(); }
+  const patch = sim2._gp ? sim2._gp.idx.length : 0;
+  sim2.grab = null; sim2.wake();
+  for (let f = 0; f < 300; f++) { sim2.step(1 / 60); sim2.computeNormals(); }
+  const t2 = tangled(sim2, A.g, B.g);
+  let nan = 0; for (let i = 0; i < sim2.N * 3; i++) if (!isFinite(sim2.x[i])) nan++;
+  ok('захват пятном и рывок: слои распутываются после отпускания', patch > 3 && !nan && t2.bad < t2.n * 0.02, `пятно ${patch} т., перепутано ${t2.bad} из ${t2.n}`);
 }
 
 console.log(`\n${pass} пройдено, ${fail} провалено`);

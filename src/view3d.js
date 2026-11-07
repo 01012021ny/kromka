@@ -6,7 +6,7 @@ import { normalMap, physics } from './materials.js';
 import { pieceCanvas } from './textures.js';
 
 /** отступ слоя при отрисовке, см: каждый следующий слой — на 0,3 см дальше от тела */
-const layerOff = (rec) => Math.min(4, Math.max(0, rec?.garment?.layer || 0)) * 0.3;
+const layerOff = (rec) => Math.min(4, Math.max(0, rec?.layer ?? rec?.garment?.layer ?? 0)) * 0.3; // ранг слоя из физики
 
 export class View3D {
   constructor(el, app) {

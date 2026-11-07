@@ -50,6 +50,8 @@ export class SimProxy {
   get grab() { return this._grab; }
   set grab(g) { this._grab = g; this.worker.postMessage({ type: 'grab', grab: g }); }
   set selfCollide(v) { this.worker.postMessage({ type: 'self', on: v }); }
+  get holdFit() { return this._holdFit !== false; }
+  set holdFit(v) { this._holdFit = v; this.worker.postMessage({ type: 'fit', on: v }); }
   computeNormals() { return Sim.prototype.computeNormals.call(this); }
   strainColors(out) { return Sim.prototype.strainColors.call(this, out); }
   pick(i) { return Sim.prototype.pick.call(this, i); }

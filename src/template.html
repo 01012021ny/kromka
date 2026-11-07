@@ -133,6 +133,24 @@ aside select{max-width:100%}
 #help h4{margin:0 0 6px;font:600 10px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--tx3)}
 #help p,#help li{color:var(--tx2);font-size:12.5px;margin:0 0 6px}
 #help ol{padding-left:18px;margin:0}
+#libWin{position:fixed;inset:0;background:rgba(5,5,6,.82);display:none;z-index:58;align-items:center;justify-content:center}
+#libWin .box{width:min(1180px,94vw);height:88vh;display:flex;flex-direction:column;background:#111113;border:1px solid var(--ln2);border-radius:6px;overflow:hidden}
+.lw-head{display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid var(--ln)}
+.lw-head h1{font:700 15px var(--sans);letter-spacing:.24em;text-transform:uppercase;margin:0;white-space:nowrap}
+.lw-head input{flex:1;min-width:120px}
+.lw-head #lwClose{font-size:18px;padding:2px 10px}
+.lw-body{flex:1;display:grid;grid-template-columns:270px 1fr;min-height:0}
+.lw-f{overflow:auto;padding:10px 16px 16px;border-right:1px solid var(--ln);background:var(--p1)}
+.lw-main{overflow:auto;padding:12px 18px 18px}
+.lw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px;margin-top:8px}
+.lw-grid .grp{grid-column:1/-1;margin:8px 0 0}
+.lw-src .src{max-width:720px;margin:10px 0}
+.card.big{align-items:flex-start;padding:10px}
+.card .nt{font-size:11px;color:var(--tx3);margin-top:4px;line-height:1.35}
+.card .add{color:var(--tx3);font:11px var(--mono);white-space:nowrap}
+.card:hover .add{color:var(--ac)}
+button.wide{width:100%;text-align:left;display:flex;flex-direction:column;gap:2px;padding:9px 11px}
+button.wide .muted{font-size:10.5px}
 kbd{font:10px var(--mono);border:1px solid var(--ln2);border-radius:2px;padding:0 4px;color:var(--tx)}
 #dlg{position:fixed;inset:0;background:rgba(5,5,6,.82);display:none;z-index:61;align-items:center;justify-content:center}
 #dlg .box{width:min(620px,92vw);max-height:88vh;overflow:auto;background:#111113;border:1px solid var(--ln2);border-radius:6px;padding:22px 24px}
@@ -189,6 +207,7 @@ button.fc .n{opacity:.5;font:9px var(--mono);margin-left:4px}
         <button class="sm" id="bPlay" title="Пауза / запуск симуляции">❚❚ Симуляция</button>
         <button class="sm" id="bResew" title="Заново надеть и сшить из лекал: штанины надеваются приподнятыми и сами садятся поверх обуви">↺ Сшить</button>
         <button class="sm" id="bGrab" title="Тянуть ткань: перетаскивайте ткань мышью или пальцем (то же — Alt + перетаскивание). Камера — перетаскиванием мимо ткани">✋ Тянуть</button>
+        <button class="sm on" id="bFit" title="Держать посадку: пояс и плечи остаются на той высоте, где их задумали (меняется параметром «посадка»), вещь не сползает. Выключите, чтобы ткань свободно сползала под весом">Посадка</button>
         <button class="sm" id="bStrain" title="Карта натяжения: красным — ткань перетянута">Натяжение</button>
         <div class="pill" id="quality" title="Плотность сетки ткани"><button data-q="3.4">Эскиз</button><button data-q="2.6" class="on">Норма</button><button data-q="2.0">Детально</button></div>
         <div class="pill"><button data-cam="front" title="Вид спереди">Пер</button><button data-cam="side" title="Вид сбоку">Бок</button><button data-cam="back" title="Вид сзади">Спн</button></div>
@@ -208,6 +227,7 @@ button.fc .n{opacity:.5;font:9px var(--mono);margin-left:4px}
 </div>
 <div id="toast"></div>
 <div id="help"><div class="box" id="helpBox"></div></div>
+<div id="libWin"><div class="box" id="libBox"></div></div>
 <input type="file" id="fileImg" accept="image/png,image/jpeg,image/webp,image/svg+xml" style="display:none">
 <input type="file" id="fileProj" accept=".json,application/json" style="display:none">
 <script>/*APP*/</script>

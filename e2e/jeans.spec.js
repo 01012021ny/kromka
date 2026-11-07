@@ -2,7 +2,8 @@ import { test, expect, openApp, captureSaves, savedFiles, clothStats } from './f
 
 test('джинсы: основа из каталога → 3D без внутренних деталей → паспорт образца для пошива', async ({ page }) => {
   await openApp(page, '#local');
-  await page.click('[data-add=flare]');
+  await page.click('#libOpen');
+  await page.click('#libList [data-add=flare]');
   await expect.poll(() => page.evaluate(() => window.__app.S.garments.some((g) => g.preset === 'flare'))).toBe(true);
   const info = await page.evaluate(() => {
     const a = window.__app, g = a.S.garments.find((x) => x.preset === 'flare');

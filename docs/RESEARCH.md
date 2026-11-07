@@ -74,3 +74,10 @@ ChatGarment (CVPR 2025; LLaVA + LoRA → JSON для GarmentCode). GarmentCode �
 **Вывод:** без API — возможно (B), но грубо и с неудобной доставкой модели. Лучшее соотношение цены и качества — A
 (Claude в артефакте), затем B как офлайн-запасной путь. C — следить, не внедрять. Брендовых лекал в открытом доступе
 нет; открытые базы (FreeSewing — MIT, Make/Use, Subtraction Cutting) полезны как идеи и для импорта SVG/DXF.
+
+## Открытые лекала дизайнеров (07.11.2026)
+SHOWstudio Design Download (с 2002) — настоящие бесплатные лекала дизайнеров: Yohji Yamamoto, Y-3, Martin Margiela,
+Junya Watanabe, Gareth Pugh, Alexander McQueen, John Galliano, JW Anderson, Rahul Mishra; PDF A4 со склейкой и A0
+для копицентра. Права — только сшить вещь для себя (© SHOWstudio), поэтому в библиотеку КРОМКИ их не включаем; полезен
+импорт PDF (A0 — один лист, векторные контуры). Sew In Love (sewinlove.com.au) — простые женские платья и туники,
+японские лекала; условия на сайте явно не указаны.

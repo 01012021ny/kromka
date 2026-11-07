@@ -45,4 +45,5 @@ self.onmessage = (e) => {
   else if (m.type === 'run') { sim.running = m.on; if (m.on) sim.wake(); kick(); }
   else if (m.type === 'wake') { sim.wake(); kick(); }
   else if (m.type === 'self') { sim.selfCollide = m.on; }
+  else if (m.type === 'fit') { sim.holdFit = m.on; sim.wake(); kick(); }
 };

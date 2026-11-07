@@ -272,6 +272,10 @@ export class Sim {
     let N = 0;
     const st = [], bd = [], sw = [], chainsAll = [];
     const stR = [], stC = [], stM = [], bdR = [], bdC = [];
+    // ранг слоя: два изделия с одинаковым слоем толкались симметрично и путались; теперь у каждого изделия свой ранг
+    // (по слою, при равенстве — позже добавленное снаружи), и между ними работает направленное отталкивание
+    const shown = garments.filter((g) => g.visible !== false);
+    const rank = new Map(shown.map((g, i) => [g, i]).sort((a, b) => (a[0].layer || 0) - (b[0].layer || 0) || a[1] - b[1]).map(([g], r) => [g, r]));
     for (const g of garments) {
       if (g.visible === false) continue;
       // внутренние детали (мешковина, откосок, шлёвки) кроятся, но не драпируются
@@ -293,7 +297,7 @@ export class Sim {
         const ph = physics(mat);
         const mesh = meshPiece(p, counts, h);
         const nv = mesh.v2.length / 2;
-        const rec = { piece: p, garment: g, mesh, off: N, n: nv, ph, mat, layer: g.layer || 0, idx: pieces.length };
+        const rec = { piece: p, garment: g, mesh, off: N, n: nv, ph, mat, layer: rank.get(g) || 0, idx: pieces.length };
         local[p.id] = rec;
         pieces.push(rec);
         N += nv;
@@ -335,16 +339,23 @@ export class Sim {
     const nrm = new Float32Array(N * 3);
     const pidx = new Int32Array(N), bnd = new Uint8Array(N), r2d = new Float32Array(N * 2);
     // positions: map from previous state when possible
-    const tmp = [0, 0, 0];
+    const tmp = [0, 0, 0], tmpA = [0, 0, 0];
     let mappedAll = !!prev;
+    // якоря посадки: линия талии/пояса и плечи держатся на той высоте, где их задумали (не ниже), — как пояс или плечи
+    // держат вещь на живом теле; без этого брюки и юбки сползали на 3–5 см, пальто — с плеч
+    const anchors = [], anchorY = [];
     for (const r of pieces) {
       const { mesh, off, piece, ph } = r;
       const old = prev && (prev[piece.id] || (piece.srcId && prev[piece.srcId]));
       const ctx = r.garment._ctx;
       if (!old) mappedAll = false;
       const loc = old ? locator(old) : null;
+      const kind = piece.place.kind, anchorable = kind === 'torso' || kind === 'leg' || kind === 'band';
+      let ytop = -1e9;
+      if (anchorable && kind !== 'band') for (let i = 0; i < r.n; i++) ytop = Math.max(ytop, mesh.v2[2 * i + 1]);
       for (let i = 0; i < r.n; i++) {
         const px = mesh.v2[2 * i], py = mesh.v2[2 * i + 1];
+        if (anchorable && (kind === 'band' || py > ytop - 3)) { placePoint(piece, px, py, ctx, body, tmpA); anchors.push(off + i); anchorY.push(tmpA[1]); }
         let ok = false;
         if (loc) ok = loc(px, py, tmp);
         if (!ok) placePoint(piece, px, py, ctx, body, tmp);
@@ -403,6 +414,8 @@ export class Sim {
     }
     for (let i = 0; i < N; i++) w[i] = mass[i] > 0 ? 1 / mass[i] : 0;
     this.frameX = new Float32Array(x);
+    this.anchors = Int32Array.from(anchors); this.anchorY = Float32Array.from(anchorY);
+    if (this.holdFit === undefined) this.holdFit = true;
     Object.assign(this, { x, v, w, mass, thick, fric, damp, layer, onArm, nrm, pieces, pidx, bnd, r2d });
     this.prevX = new Float32Array(x);
     this.st = new Int32Array(st); this.stR = new Float32Array(stR); this.stC = new Float32Array(stC); this.stM = new Float32Array(stM);
@@ -458,6 +471,7 @@ export class Sim {
   }
   wake() { this.settled = false; this.calm = 0; this.running = true; }
   step(dt) {
+    if (!this.grab) this._gp = null; // следующий захват — с новыми смещениями пятна
     if (!this.N || !this.running || this.settled) return;
     dt = Math.min(dt, 1 / 30);
     const sub = this.substeps, h = dt / sub, h2 = h * h;
@@ -556,10 +570,17 @@ export class Sim {
           x[ka] -= fx * wa; x[ka + 1] -= fy * wa; x[ka + 2] -= fz * wa;
           x[kb] += fx * wb; x[kb + 1] += fy * wb; x[kb + 2] += fz * wb;
         }
-        // grab
+        // grab: тянется не одна точка, а пятно ~4 см (вес спадает к краю), и не быстрее 0,3 см за итерацию —
+        // одиночная точка с рывком протыкала соседние слои и складки, и ткань запутывалась сама в себе
         if (this.grab) {
-          const g = this.grab, k = 3 * g.i;
-          x[k] += (g.p[0] - x[k]) * 0.35; x[k + 1] += (g.p[1] - x[k + 1]) * 0.35; x[k + 2] += (g.p[2] - x[k + 2]) * 0.35;
+          const g = this.grab, gp = this.grabPatch(g);
+          for (let q = 0; q < gp.idx.length; q++) {
+            const j = gp.idx[q], k = 3 * j, wq = gp.w[q];
+            let dx = (g.p[0] + gp.off[3 * q] - x[k]) * 0.35 * wq, dy = (g.p[1] + gp.off[3 * q + 1] - x[k + 1]) * 0.35 * wq, dz = (g.p[2] + gp.off[3 * q + 2] - x[k + 2]) * 0.35 * wq;
+            const l = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (l > 0.3) { const f = 0.3 / l; dx *= f; dy *= f; dz *= f; }
+            x[k] += dx; x[k + 1] += dy; x[k + 2] += dz;
+          }
         }
         // layered cloth repulsion
         if (this.selfCollide && it === 0 && (s & 1) === 0) this.clothCollide();
@@ -594,6 +615,15 @@ export class Sim {
           }
         }
       }
+      // посадка: якорные точки не опускаются ниже задуманной высоты (вверх — свободно); захваченная точка — свободна
+      if (this.holdFit) {
+        const A = this.anchors, AY = this.anchorY, gi = this.grab ? this.grab.i : -1;
+        for (let q = 0; q < A.length; q++) {
+          const i = A[q]; if (i === gi) continue;
+          const k = 3 * i + 1, lo = AY[q] - 0.4;
+          if (x[k] < lo) x[k] += (lo - x[k]) * 0.35;
+        }
+      }
       // velocities
       const vmax = 400;
       for (let i = 0; i < N; i++) {
@@ -609,6 +639,21 @@ export class Sim {
     this.t += dt;
     this.energy = Math.sqrt(ke / Math.max(1, N)) / dt;
     if (this.t > 3 && this.energy < 1.2 && !this.grab) { this.calm += dt; if (this.calm > 1.2) this.settled = true; } else this.calm = 0;
+  }
+  /** пятно захвата: точки той же детали в радиусе 4 см (по лекалу) со смещениями относительно захваченной */
+  grabPatch(g) {
+    if (this._gp && this._gp.i === g.i && this._gp.N === this.N) return this._gp;
+    const { x, r2d, pidx } = this, R = 4, rec = g.i >= 0 && g.i < this.N ? this.pieces[pidx[g.i]] : null;
+    const idx = [], w = [], off = [];
+    if (!rec) return (this._gp = { i: g.i, N: this.N, idx: new Int32Array(0), w: new Float32Array(0), off: new Float32Array(0) });
+    for (let j = rec.off; j < rec.off + rec.n; j++) {
+      const d = Math.hypot(r2d[2 * j] - r2d[2 * g.i], r2d[2 * j + 1] - r2d[2 * g.i + 1]);
+      if (d > R) continue;
+      idx.push(j); w.push(j === g.i ? 1 : 1 - (d / R) * 0.85);
+      off.push(x[3 * j] - x[3 * g.i], x[3 * j + 1] - x[3 * g.i + 1], x[3 * j + 2] - x[3 * g.i + 2]);
+    }
+    this._gp = { i: g.i, N: this.N, idx: Int32Array.from(idx), w: Float32Array.from(w), off: Float32Array.from(off) };
+    return this._gp;
   }
   computeNormals() {
     const { x, nrm } = this;

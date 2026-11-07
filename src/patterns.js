@@ -122,6 +122,32 @@ export const GEN_PARAMS = {
 };
 
 // значения новых параметров для изделий, созданных до их появления
+/** снимок мерок фигуры, под которую посчитаны абсолютные параметры изделия (длины, обхват у колена и низа) */
+export const fitSnap = (m) => ({ height: m.height, chest: m.chest, waist: m.waist, hips: m.hips, knee: m.knee, ankle: m.ankle, armLen: m.armLen, yWaist: m.y.waist });
+const half = (v) => Math.round(v * 2) / 2;
+/**
+ * Перенос параметров изделия с одной фигуры на другую: свободы и так считаются от мерок, а длины и обхваты
+ * колена/низа заданы в сантиметрах — их сдвигаем на разницу фигур, чтобы вещь сохранила задуманные пропорции.
+ */
+export function adaptParams(gen, p, from, to) {
+  const q = { ...p };
+  if (!from || !to) return q;
+  const rH = to.height / from.height, same = Math.abs(rH - 1) < 0.002 && Math.abs(to.knee - from.knee) < 0.1 && Math.abs(to.armLen - from.armLen) < 0.1;
+  if (same) return q;
+  if (gen === 'top') {
+    if (q.len != null) q.len = half(q.len * rH);
+    if (q.sleeve > 0) q.sleeve = half(q.sleeve * (to.armLen / from.armLen));
+  } else if (gen === 'pants') {
+    if (q.len != null) q.len = half(q.len * (to.yWaist / from.yWaist));
+    if (q.knee != null) q.knee = half(q.knee + (to.knee - from.knee));
+    if (q.hem != null) q.hem = half(Math.max(24, q.hem + (to.ankle - from.ankle)));
+    if (q.drop) q.drop = half(q.drop * rH);
+  } else if (gen === 'skirt') {
+    if (q.len != null) q.len = half(q.len * rH);
+  }
+  return q;
+}
+
 export const GEN_DEFAULTS = { top: { collar: 0, collarH: 4, cuffs: 0, cuffH: 6 }, pants: { kneeY: 0, hemBack: 0, jeans: 0, artKnee: 0, buttonFly: 0, contour: 0 } };
 
 export const GARMENT_PRESETS = [

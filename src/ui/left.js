@@ -1,6 +1,7 @@
 // Left panel: one renderer per step tab
 import { findPiece } from '../patterns.js';
-import { LIBRARY, DESIGNERS, OUTFITS, OPEN_SOURCES, searchLibrary, facets, outfitsFor, matGroup } from '../library.js';
+import { LIBRARY, findItem } from '../library.js';
+import { openLibrary, cardHTML, quickIds, recentIds } from './library.js';
 import { PRESETS, CONS, describe, compString, makeMaterial } from '../materials.js';
 import { MEAS_LABELS } from '../body.js';
 import { ACC_TYPES, makeAcc } from '../accessories.js';
@@ -24,15 +25,18 @@ function leftBody(app, L) {
   ${ctl('bSex', 'Пол: женский ↔ мужской', b.sex, 0, 1, 0.05)}${ctl('bH', 'Рост, см', b.height, 140, 205, 1)}${ctl('bW', 'Вес, кг', b.weight, 38, 140, 0.5)}${ctl('bBF', 'Процент жира, %', b.bf, 6, 45, 0.5)}${ctl('bArms', 'Отведение рук, °', b.arms ?? 24, 8, 50, 1)}
   <div class="row"><label>Показать линии мерок</label><button class="sm ${app.body.showMeasures ? 'on' : ''}" id="bMeas">${app.body.showMeasures ? 'вкл' : 'выкл'}</button></div></div>
   <div class="sec"><h3>Мерки <button class="sm ghost" id="bReset">сбросить ручные</button></h3><div id="measRead"></div></div>
-  <div class="sec"><h3>Изделия под новую фигуру</h3><p class="note">Изменение манекена сразу меняет посадку в 3D. Чтобы перестроить сами лекала от новых мерок (ручные правки сбросятся):</p><button id="bRefit">Перестроить базовые лекала</button></div>`;
+  <div class="sec"><h3>Изделия под фигуру</h3>${(() => { const mm = app.fitMismatch(); return mm.length ? `<p class="note neg">Под другую фигуру построено: ${mm.length} — ${esc(mm.map((g) => g.name).join(', '))}. Вещи на манекене выглядят не того размера.</p>` : '<p class="note pos">Все изделия построены под этот манекен.</p>'; })()}
+  <p class="note">Подгонка переносит длины и обхваты лекал на новую фигуру с сохранением задуманных пропорций (ручные правки лекал сбросятся; отмена — Ctrl+Z).</p><button id="bRefit">Подогнать лекала под манекен</button></div>`;
   const PRE = [{ sex: 0, height: 178, weight: 55, bf: 19 }, { sex: 0, height: 166, weight: 62, bf: 28 }, { sex: 1, height: 186, weight: 70, bf: 11 }, { sex: 1, height: 178, weight: 82, bf: 20 }];
-  L.querySelectorAll('[data-bp]').forEach((x) => (x.onclick = () => { app.setBody({ ...PRE[+x.dataset.bp], overrides: {} }); renderLeft(app); }));
+  L.querySelectorAll('[data-bp]').forEach((x) => (x.onclick = () => { app.setBody({ ...PRE[+x.dataset.bp], overrides: {} }); renderLeft(app); offerRefit(); }));
   let committed = false;
-  const live = (key) => (v, fin) => { if (!committed) { app.commit('Манекен'); committed = true; } if (fin) committed = false; app.setBody({ [key]: v }, false); };
+  // после изменения фигуры — предложить подогнать лекала (изделия, построенные под прежнюю фигуру, иначе выглядят не того размера)
+  const offerRefit = () => { const mm = app.fitMismatch(); if (mm.length) app.toast(`Фигура изменилась: ${mm.length} изд. построены под прежнюю`, '', { label: 'Подогнать лекала', fn: () => app.refitAll() }); };
+  const live = (key) => (v, fin) => { if (!committed) { app.commit('Манекен'); committed = true; } if (fin) committed = false; app.setBody({ [key]: v }, false); if (fin) offerRefit(); };
   bindCtl('bSex', live('sex'), '', 2); bindCtl('bH', live('height'), '', 0); bindCtl('bW', live('weight')); bindCtl('bBF', live('bf')); bindCtl('bArms', live('arms'), '°', 0);
   $('#bMeas').onclick = () => { app.body.showMeasures = !app.body.showMeasures; app.body.measureGroup.visible = app.body.showMeasures; renderLeft(app); };
   $('#bReset').onclick = () => { app.setBody({ overrides: {} }); renderLeft(app); };
-  $('#bRefit').onclick = () => { app.commit('Перестроить лекала'); for (const g of app.S.garments) app.regenerate(g, false); app.toast('Лекала перестроены по новым меркам', 'pos'); };
+  $('#bRefit').onclick = () => app.refitAll();
   renderBodyReadout(app);
 }
 export function renderBodyReadout(app) {
@@ -42,50 +46,15 @@ export function renderBodyReadout(app) {
   el.querySelectorAll('[data-meas]').forEach((inp) => (inp.onchange = () => { const o = { ...(app.S.body.overrides || {}) }; o[inp.dataset.meas] = +inp.value; app.setBody({ overrides: o }); }));
 }
 
-const GEN_LABEL = { top: 'плечевое', pants: 'поясное · брюки', skirt: 'поясное · юбка', snood: 'аксессуар из ткани' };
-const LEVEL = (n) => '●'.repeat(n) + '○'.repeat(3 - n);
-const FACETS = [['cat', 'Категория'], ['style', 'Ассоциации: дизайнеры и бренды'], ['sil', 'Силуэт'], ['mat', 'Ткань'], ['level', 'Сложность']];
 function leftGarments(app, L) {
-  const f = (app.libF ||= { q: '', cat: [], style: [], sil: [], mat: [], level: [], tags: [] });
-  const fc = facets();
-  const chip = (key, v, n, label) => `<button class="fc ${f[key].includes(v) ? 'on' : ''}" data-fk="${key}" data-fv="${esc(String(v))}">${esc(label ?? v)}<span class="n">${n}</span></button>`;
-  L.innerHTML = `<div class="sec"><h2>Библиотека лекал</h2><p class="note">Конструкции строятся по меркам манекена, дальше меняются параметрами, разрезами и накладками. «Ассоциации» — приёмы кроя, узнаваемые у дизайнера, а не его оригинальные лекала: дома моды лекала не публикуют.</p>
-  <input id="libQ" type="search" placeholder="Поиск: клёш, кожа, Rick, шнуровка, молния…" value="${esc(f.q)}" style="width:100%;margin-bottom:4px">
-  ${FACETS.map(([k, n]) => `<div class="facet"><span class="fh">${n}</span>${fc[k].map(([v, c]) => chip(k, v, c, k === 'style' ? DESIGNERS.find((d) => d.id === v).n : k === 'level' ? LEVEL(+v) : null)).join('')}</div>`).join('')}
-  <details class="facet"${f.tags.length ? ' open' : ''}><summary class="fh">Детали${f.tags.length ? ' · ' + f.tags.length : ''}</summary>${fc.tags.map(([v, c]) => chip('tags', v, c)).join('')}</details>
-  <div class="row" style="margin:6px 0 2px"><span class="muted" id="libN"></span><button class="sm ghost" id="libR" style="margin-left:auto">Сбросить фильтры</button></div>
-  <div class="list" id="libList"></div></div>
-  <div class="sec"><h3>Образы — собрать на манекене</h3><p class="note">Несколько вещей и обувь сразу. Текущие изделия заменяются (вернуть — «Вернуть» в подсказке или Ctrl+Z).</p><div class="list" id="libOut"></div></div>
-  <div class="sec"><h3>Открытые источники лекал</h3><p class="note">Брендовых каталогов в открытом доступе нет. Открытые базы, которые стоит знать:</p>
-  ${OPEN_SOURCES.map((o) => `<div class="src"><b>${esc(o.n)}</b> <span class="chip">${esc(o.lic)}</span><div class="muted">${esc(o.what)}</div><div class="muted mono">${esc(o.url)}</div></div>`).join('')}</div>
+  const ids = quickIds(), isRecent = recentIds().length > 0;
+  L.innerHTML = `<div class="sec"><h2>Изделия</h2>
+  <button id="libOpen" class="wide">Библиотека лекал… <span class="muted">${LIBRARY.length} шаблонов · поиск, фильтры, образы · L</span></button></div>
+  <div class="sec"><h3>${isRecent ? 'Недавние шаблоны' : 'Начать с базового'}</h3><div class="list" id="quick">${ids.map((id) => findItem(id)).filter(Boolean).map((p) => cardHTML(p)).join('')}</div></div>
   <div class="sec"><h3>Слои и детали</h3><div class="tree" id="tree"></div></div>`;
-  const q = $('#libQ');
-  q.oninput = () => { f.q = q.value; renderLibList(app); };
-  L.querySelectorAll('[data-fk]').forEach((b) => (b.onclick = () => {
-    const k = b.dataset.fk, v = k === 'level' ? +b.dataset.fv : b.dataset.fv, arr = f[k], i = arr.indexOf(v);
-    i >= 0 ? arr.splice(i, 1) : arr.push(v);
-    b.classList.toggle('on', i < 0);
-    if (k === 'tags') { const sm = b.closest('details')?.querySelector('summary'); if (sm) sm.textContent = 'Детали' + (f.tags.length ? ' · ' + f.tags.length : ''); }
-    renderLibList(app);
-  }));
-  $('#libR').onclick = () => { app.libF = null; renderLeft(app); };
-  renderLibList(app);
+  $('#libOpen').onclick = () => openLibrary(app);
+  L.querySelectorAll('#quick [data-add]').forEach((c) => (c.onclick = () => app.addGarment(c.dataset.add)));
   renderTree(app);
-}
-function renderLibList(app) {
-  const f = app.libF, el = $('#libList'); if (!el) return;
-  const items = searchLibrary(f.q, f);
-  $('#libN').textContent = `${items.length} из ${LIBRARY.length}`;
-  const sw = (id) => PRESETS.find((x) => x.id === id)?.color || '#555';
-  el.innerHTML = items.length ? items.map((p, i) => `${p.cat !== items[i - 1]?.cat ? `<div class="grp">${esc(p.cat)}</div>` : ''}<div class="card" data-add="${p.id}" title="${esc(p.note || '')}"><div class="sw" style="background:${sw(p.mat)}"></div><div style="flex:1;min-width:0"><div class="t">${esc(p.name)}</div>
-    <div class="s">${esc(p.sil || GEN_LABEL[p.gen])} · ${esc(matGroup(p.mat))} · <span class="lv" title="Сложность">${LEVEL(p.level || 1)}</span>${p.decor ? ' · детали' : ''}</div>
-    ${(p.style || []).length ? `<div class="as">${p.style.map((s) => esc(DESIGNERS.find((d) => d.id === s)?.n || s)).join(' · ')}</div>` : ''}</div><span class="muted">+</span></div>`).join('')
-    : '<p class="note">Ничего не нашлось — ослабьте фильтры.</p>';
-  el.querySelectorAll('[data-add]').forEach((c) => (c.onclick = () => app.addGarment(c.dataset.add)));
-  const out = $('#libOut');
-  const os = outfitsFor(f.style);
-  out.innerHTML = (os.length ? os : OUTFITS).map((o) => `<div class="card" data-outfit="${o.id}"><div style="flex:1;min-width:0"><div class="t">${esc(o.name)}</div><div class="s">${o.items.map((id) => esc(LIBRARY.find((x) => x.id === id)?.name.split(/[,(]/)[0].toLowerCase() || id)).join(' + ')} + обувь</div><div class="as">${o.style.map((s) => esc(DESIGNERS.find((d) => d.id === s)?.n)).join(' · ')}</div></div><button class="sm">Собрать</button></div>`).join('');
-  out.querySelectorAll('[data-outfit]').forEach((c) => (c.onclick = () => app.applyOutfit(c.dataset.outfit)));
 }
 export function renderTree(app) {
   const el = $('#tree'); if (!el) return;
@@ -93,7 +62,7 @@ export function renderTree(app) {
   const gs = app.S.garments.slice().sort((a, b) => (b.layer || 0) - (a.layer || 0));
   const fold = (app.treeFold ||= new Set());
   el.innerHTML = gs.length ? gs.map((g) => `<div class="g"><div class="gh ${app.sel.g === g.id && !app.sel.p ? 'sel' : ''}" data-g="${g.id}"><button class="eye fold" data-fold="${g.id}" title="${fold.has(g.id) ? 'Показать детали' : 'Свернуть детали'}">${fold.has(g.id) ? '▸' : '▾'}</button><button class="eye" data-vis="${g.id}" title="Показать/скрыть">${g.visible === false ? '○' : '●'}</button><span class="n">${esc(g.name)}</span><button class="eye del" data-del="${g.id}" title="Удалить изделие целиком (вернуть — Ctrl+Z)">✕</button>
-      <div class="gc"><span class="chip">слой ${g.layer}</span><button class="eye" data-up="${g.id}" title="Слой выше">▲</button><button class="eye" data-dn="${g.id}" title="Слой ниже">▼</button><span class="muted">${g.pieces.length} дет.</span></div></div>
+      <div class="gc"><span class="chip">слой ${(g.layer || 0) + 1}</span><button class="eye" data-up="${g.id}" title="Надеть поверх соседнего слоя">▲</button><button class="eye" data-dn="${g.id}" title="Надеть под соседний слой">▼</button><span class="muted">${g.pieces.length} дет.</span></div></div>
     ${fold.has(g.id) ? '' : g.pieces.map((p) => `<div class="pc ${app.sel.p === p.id ? 'sel' : ''}" data-p="${p.id}"><button class="eye" data-pv="${p.id}">${p.hidden ? '○' : '●'}</button><span class="sw" style="width:12px;height:12px;background:${mats[p.mat]?.color || '#555'}"></span><span style="flex:1">${esc(p.name)}</span>${p.inner ? '<span class="chip" title="Кроится, но в 3D не показывается: внутри изделия">внутр.</span>' : ''}</div>
       ${(p.overlays || []).map((o) => `<div class="sub ${app.sel.overlay === o.id ? 'sel' : ''}" data-ov="${p.id}:${o.id}">▣ ${esc(o.name)}</div>`).join('')}${(p.prints || []).map((r) => `<div class="sub ${app.sel.print === r.id ? 'sel' : ''}" data-pr="${p.id}:${r.id}">▤ принт</div>`).join('')}`).join('')}</div>`).join('') : '<p class="note">Пока пусто — добавьте основу выше.</p>';
   el.onclick = (e) => {
@@ -103,7 +72,7 @@ export function renderTree(app) {
     if (t.dataset.fold) { fold.has(t.dataset.fold) ? fold.delete(t.dataset.fold) : fold.add(t.dataset.fold); renderTree(app); return; }
     if (t.dataset.vis) { const g = app.garment(t.dataset.vis); g.visible = g.visible === false; app.rebuildSim(); app.scheduleLayout(); renderTree(app); app.editor.dirty = true; return; }
     if (t.dataset.pv) { const f = findPiece(S.garments, t.dataset.pv); f.p.hidden = !f.p.hidden; app.rebuildSim(); app.scheduleLayout(); renderTree(app); app.editor.dirty = true; return; }
-    if (t.dataset.up || t.dataset.dn) { const g = app.garment(t.dataset.up || t.dataset.dn); app.commit('Порядок слоёв'); g.layer = Math.max(0, (g.layer || 0) + (t.dataset.up ? 1 : -1)); app.rebuildSim(true); renderTree(app); return; }
+    if (t.dataset.up || t.dataset.dn) { app.moveLayer(app.garment(t.dataset.up || t.dataset.dn), t.dataset.up ? 1 : -1); renderTree(app); return; }
     const gh = t.closest('[data-g]'); if (gh) { app.select({ g: gh.dataset.g }); return; }
     const pc = t.closest('[data-p]'); if (pc) { app.select({ p: pc.dataset.p }); return; }
     const ov = t.closest('[data-ov]'); if (ov) { const [p, o] = ov.dataset.ov.split(':'); app.select({ p, overlay: o }); return; }

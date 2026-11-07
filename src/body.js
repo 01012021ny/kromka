@@ -254,20 +254,23 @@ export class Body {
     }
     this.footLen = 0.152 * H;
     // capsules for collider
+    // grp — цепочка (рука, нога, голова): внутри цепочки капсулы объединяются жёстко, между цепочками и торсом —
+    // плавно (скругление K). Плавное объединение соседних капсул одной ноги раздувало SDF на ~1,4 см вокруг сетки,
+    // и ткань садилась шире видимой ноги.
     const caps = [];
-    const capsFrom = (joints) => { for (let i = 0; i < joints.length - 1; i++) caps.push(mkCap(joints[i].p, joints[i + 1].p, joints[i].r, joints[i + 1].r)); };
-    for (const a of this.arms) {
-      capsFrom(a.joints);
-      caps.push(mkCap(a.wrist.clone().addScaledVector(a.d, 2), a.hand.clone().addScaledVector(a.d, -2.5), rW * 0.95, rW * 0.8));
-    }
-    for (const l of this.legs) {
-      capsFrom(l.joints);
+    const capsFrom = (joints, grp) => { for (let i = 0; i < joints.length - 1; i++) caps.push(Object.assign(mkCap(joints[i].p, joints[i + 1].p, joints[i].r, joints[i + 1].r), { grp })); };
+    this.arms.forEach((a, ai) => {
+      capsFrom(a.joints, 1 + ai);
+      caps.push(Object.assign(mkCap(a.wrist.clone().addScaledVector(a.d, 2), a.hand.clone().addScaledVector(a.d, -2.5), rW * 0.95, rW * 0.8), { grp: 1 + ai }));
+    });
+    this.legs.forEach((l, li) => {
+      capsFrom(l.joints, 3 + li);
       const heel = V(l.ank.x, 3.2, l.ank.z - 4.5), toe = V(l.ank.x + 1.2 * l.sg, 2.4, l.ank.z - 4.5 + this.footLen - 4.5);
-      caps.push(Object.assign(mkCap(heel, toe, 3.3, 2.6), { foot: true })); // стопа: штанина ниже её верха надевается подвёрнутой (sim.placePoint)
-      caps.push(mkCap(V(l.ank.x, Y.ankle + 1, l.ank.z), heel, rAn, 3.3));
+      caps.push(Object.assign(mkCap(heel, toe, 3.3, 2.6), { foot: true, grp: 3 + li })); // стопа: штанина ниже её верха надевается подвёрнутой (sim.placePoint)
+      caps.push(Object.assign(mkCap(V(l.ank.x, Y.ankle + 1, l.ank.z), heel, rAn, 3.3), { grp: 3 + li }));
       l.heel = heel; l.toe = toe;
-    }
-    caps.push(mkCap(V(0, Y.headC - 4, 0.6), V(0, Y.headC + 4, -0.2), 8.6, 8.4));
+    });
+    caps.push(Object.assign(mkCap(V(0, Y.headC - 4, 0.6), V(0, Y.headC + 4, -0.2), 8.6, 8.4), { grp: 5 }));
     this.caps = caps;
     this.extraCaps = this.extraCaps || [];
     if (this.group) this._mesh(fa, ff, fb, fz, rings);
@@ -359,6 +362,7 @@ export class Body {
       }
     }
     const caps = this.caps, ec = this.extraCaps, nc = caps.length;
+    let bestG = has ? 0 : -1; // 0 — торс
     for (let q = 0, n = nc + ec.length; q < n; q++) {
       const c = q < nc ? caps[q] : ec[q - nc];
       if (x < c.minx || x > c.maxx || y < c.miny || y > c.maxy || z < c.minz || z > c.maxz) continue;
@@ -370,10 +374,13 @@ export class Body {
       const d = l - (c.ra + (c.rb - c.ra) * t);
       let mx = 0, my = 1, mz = 0;
       if (l > 1e-6) { mx = qx / l; my = qy / l; mz = qz / l; }
-      if (!has) { best = d; nx = mx; ny = my; nz = mz; has = true; continue; }
+      const gq = c.grp ?? 100 + q;
+      if (!has) { best = d; nx = mx; ny = my; nz = mz; has = true; bestG = gq; continue; }
+      if (gq === bestG) { if (d < best) { best = d; nx = mx; ny = my; nz = mz; } continue; } // та же цепочка — без скругления
       const diff = d - best;
       if (diff >= K) continue;
-      if (diff <= -K) { best = d; nx = mx; ny = my; nz = mz; continue; }
+      if (diff <= -K) { best = d; nx = mx; ny = my; nz = mz; bestG = gq; continue; }
+      if (diff < 0) bestG = gq;
       const hh = 0.5 + (0.5 * diff) / K; // weight of current best
       best = d + (best - d) * hh - K * hh * (1 - hh);
       nx = mx + (nx - mx) * hh; ny = my + (ny - my) * hh; nz = mz + (nz - mz) * hh;

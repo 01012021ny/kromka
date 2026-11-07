@@ -1,7 +1,7 @@
 // @ts-check
 import * as THREE from 'three';
-import { Body, BODY_DEFAULT } from './body.js';
-import { GENERATORS, GEN_DEFAULTS, buildPiece, seamOf, findPiece } from './patterns.js';
+import { Body, BODY_DEFAULT, measure } from './body.js';
+import { GENERATORS, GEN_DEFAULTS, buildPiece, seamOf, findPiece, adaptParams, fitSnap } from './patterns.js';
 import { Sim, seamRev } from './sim.js';
 import { SimProxy } from './simproxy.js';
 import { makeMaterial, PRESETS, physics } from './materials.js';
@@ -225,22 +225,53 @@ app.ensureMaterial = (presetId) => {
   if (!m) { m = makeMaterial(presetId); S.materials.push(m); }
   return m;
 };
+// фигура, под которую написаны параметры карточек библиотеки (манекен по умолчанию)
+const REF_FIT = fitSnap(measure(BODY_DEFAULT));
+/** изделия, построенные под другую фигуру (разница > 1 см по груди, бёдрам, росту или колену) */
+app.fitMismatch = () => {
+  const cur = fitSnap(body.m);
+  return S.garments.filter((g) => { const f = g.fitM || REF_FIT; return ['chest', 'hips', 'height', 'knee', 'armLen'].some((k) => Math.abs(f[k] - cur[k]) > 1); });
+};
+/** подогнать лекала всех изделий под текущий манекен: длины и обхваты переносятся, ручные правки сбрасываются */
+app.refitAll = () => {
+  const cur = fitSnap(body.m);
+  app.commit('Подогнать под фигуру');
+  for (const g of S.garments) { g.params = adaptParams(g.gen, g.params, g.fitM || REF_FIT, cur); g.fitM = cur; app.regenerate(g, false); }
+  rebuildSim(true);
+  UI.renderLeft(app);
+  app.toast('Лекала подогнаны под фигуру манекена', 'pos');
+};
 // изделие из карточки библиотеки (или базового пресета) — без пересборки сцены
 function createGarment(pr) {
   const mat = app.ensureMaterial(pr.mat);
-  const g = { id: uid('g'), gen: pr.gen, preset: pr.id, name: pr.name, params: { ...pr.p }, layer: pr.layer, visible: true, pieces: [], seams: [], viewOff: { x: 0, y: 0 }, baseMat: mat.id, grading: defaultGrading('M') };
+  // карточки библиотеки рассчитаны на манекен по умолчанию; на другой фигуре длины и обхваты переносятся
+  const cur = fitSnap(body.m);
+  const g = { id: uid('g'), gen: pr.gen, preset: pr.id, name: pr.name, params: adaptParams(pr.gen, pr.p, REF_FIT, cur), fitM: cur, layer: pr.layer, visible: true, pieces: [], seams: [], viewOff: { x: 0, y: 0 }, baseMat: mat.id, grading: defaultGrading('M') };
   let maxX = -Infinity;
   for (const og of S.garments) for (const p of og.pieces) { const b = bbox(p.pts); maxX = Math.max(maxX, b.x1 + p.view.x); }
   g.viewOff.x = isFinite(maxX) ? maxX + 40 : 0;
   generate(g, mat.id);
   S.garments.push(g);
+  normalizeLayers();
   return g;
 }
-app.addGarment = (presetId) => {
+// слои: у каждого изделия свой номер; при равных — позже добавленное надевается сверху
+function layerOrder() { return S.garments.map((g, i) => [g, i]).sort((a, b) => (a[0].layer || 0) - (b[0].layer || 0) || a[1] - b[1]).map((x) => x[0]); }
+function normalizeLayers() { layerOrder().forEach((g, i) => (g.layer = i)); }
+app.moveLayer = (g, dir) => {
+  const ord = layerOrder(), i = ord.indexOf(g), j = i + dir;
+  if (i < 0 || j < 0 || j >= ord.length) return;
+  app.commit('Порядок слоёв');
+  [ord[i], ord[j]] = [ord[j], ord[i]];
+  ord.forEach((x, k) => (x.layer = k));
+  rebuildSim(true);
+};
+app.addGarment = (presetId, opt = {}) => {
   const pr = typeof presetId === 'string' ? findItem(presetId) : presetId;
   if (!pr) return null;
   app.commit('Добавить: ' + pr.name);
   const g = createGarment(pr);
+  if (opt.recent !== false) UI.pushRecent(pr.id);
   allTextures(); rebuildSim(); scheduleLayout();
   app.select({ g: g.id });
   UI.renderLeft(app);
@@ -252,6 +283,7 @@ app.applyOutfit = (id) => {
   const o = OUTFITS.find((x) => x.id === id);
   if (!o) return null;
   app.commit('Образ: ' + o.name);
+  UI.pushRecent(o.items);
   S.garments = [];
   const gs = o.items.map((it) => findItem(it)).filter(Boolean).map((it) => createGarment(it));
   if (o.shoes) {
@@ -493,12 +525,13 @@ app.autosave = autosave;
 app.loadProject = (o) => {
   app.commit('Открыть проект');
   S.body = o.body || deep(BODY_DEFAULT); S.materials = o.materials || []; S.garments = o.garments || []; S.accessories = o.accessories || []; S.images = o.images || {};
+  normalizeLayers();
   if (o.settings) Object.assign(S.settings, o.settings);
   let maxId = 0; JSON.stringify(o).replace(/"[a-z]+([0-9a-z]+)"/g, () => ''); setUidBase(maxId + 1000);
   for (const id in S.images) { const im = new Image(); im.onload = () => { app.imgRatio[id] = im.height / im.width; }; im.src = S.images[id]; }
   for (const g of S.garments) { g.grading ||= defaultGrading('M'); fillParams(g); for (const p of g.pieces) if (!p.base) p.base = p.name.split(' · ')[0]; }
   view3d.texCache.clear();
-  rebuildBody(); allTextures(); rebuildSim(true); scheduleLayout(); app.select({}); UI.renderLeft(app); editor.fit(); view3d.frameBody(body);
+  rebuildBody(); allTextures(); rebuildSim(true); app.syncFit(); scheduleLayout(); app.select({}); UI.renderLeft(app); editor.fit(); view3d.frameBody(body);
 };
 let dlNS;
 app.save = async (filename, data) => {
@@ -541,6 +574,7 @@ function boot() {
   body.build(S.body);
   if (saved && saved.garments?.length) {
     S.body = saved.body; S.materials = saved.materials; S.garments = saved.garments; S.accessories = saved.accessories || []; S.images = saved.images || {};
+    normalizeLayers();
     if (saved.settings) Object.assign(S.settings, saved.settings);
     setUidBase(5000);
     for (const g of S.garments) { g.grading ||= defaultGrading('M'); fillParams(g); for (const p of g.pieces) if (!p.base) p.base = p.name.split(' · ')[0]; }
@@ -551,6 +585,7 @@ function boot() {
     starter();
   }
   app.history = [];
+  app.syncFit();
   view3d.frameBody(body);
   setTimeout(() => editor.fit(), 50);
   scheduleLayout();
@@ -562,8 +597,8 @@ function starter() {
   const lth = app.ensureMaterial('horse12');
   S.accessories.push({ ...makeAcc('shoes', lth.id), p: { style: 'high', toe: 'round', shaft: 17, sole: 3.4, heel: 0, flare: 0.8, laces: 1, soleColor: '#e9e5dc' } });
   buildAccessories(); shoeSig = shoeSigOf();
-  const pants = app.addGarment('dropc');
-  const top = app.addGarment('long');
+  const pants = app.addGarment('dropc', { recent: false }); // стартовый набор — не «недавние» пользователя
+  const top = app.addGarment('long', { recent: false });
   const ecru = S.materials.find((m) => m.presetId === 'vis180');
   if (ecru) { ecru.color = '#d6cfc1'; ecru.name = 'Вискозный джерси, экрю'; }
   const blk = S.materials.find((m) => m.presetId === 'jer260');

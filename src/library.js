@@ -30,6 +30,8 @@ export const DESIGNERS = [
 export const OPEN_SOURCES = [
   { n: 'FreeSewing', url: 'https://freesewing.org', lic: 'код и конструкции — MIT', what: 'Десятки базовых конструкций, строятся по меркам прямо в браузере; выгрузка SVG/PDF. Брендовых лекал нет.' },
   { n: 'Make/Use — Holly McQuillan', url: 'https://www.makeuse.nz', lic: 'бесплатно, условия — на сайте', what: 'Открытая система zero-waste одежды, которую пользователь меняет под себя. Близко по идее к КРОМКЕ.' },
+  { n: 'SHOWstudio — Design Download', url: 'https://www.showstudio.com/tags/design-download', lic: 'бесплатно, только чтобы сшить себе; © SHOWstudio', what: 'С 2002 года — настоящие лекала дизайнеров: Yohji Yamamoto, Y-3, Martin Margiela, Junya Watanabe, Gareth Pugh, Alexander McQueen, John Galliano, JW Anderson. PDF A4 и A0. Лучший открытый источник под авангард, но в библиотеку их класть нельзя — только для своей работы.' },
+  { n: 'Sew In Love', url: 'https://www.sewinlove.com.au', lic: 'бесплатно, условия — на странице лекала', what: 'Простые женские платья и туники (шифт, бокси, заниженная талия), японские лекала. Хорошая база для упрощённых силуэтов.' },
   { n: 'Subtraction Cutting — Julian Roberts', url: 'https://www.julianand.com', lic: 'бесплатная публикация автора', what: 'Метод «вычитания»: объём из туннелей и вырезов. Идеи для авангардных форм, а не готовые лекала.' },
 ];
 
