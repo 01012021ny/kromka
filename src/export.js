@@ -241,7 +241,7 @@ export function dxf(app, sets) {
   const mats = app.matsById();
   const out = [];
   const w = (code, val) => out.push(String(code), String(val));
-  w(0, 'SECTION'); w(2, 'HEADER'); w(9, '$ACADVER'); w(1, 'AC1009'); w(9, '$INSBASE'); w(10, 0); w(20, 0); w(30, 0); w(9, '$MEASUREMENT'); w(70, 1); w(0, 'ENDSEC');
+  w(0, 'SECTION'); w(2, 'HEADER'); w(9, '$ACADVER'); w(1, 'AC1009'); w(9, '$INSBASE'); w(10, 0); w(20, 0); w(30, 0); w(9, '$MEASUREMENT'); w(70, 1); w(9, '$INSUNITS'); w(70, 4); w(0, 'ENDSEC');
   w(0, 'SECTION'); w(2, 'TABLES'); w(0, 'TABLE'); w(2, 'LAYER'); w(70, 6);
   for (const [n, col] of [['1', 7], ['4', 3], ['7', 5], ['8', 2], ['14', 1], ['15', 6]]) { w(0, 'LAYER'); w(2, n); w(70, 0); w(62, col); w(6, 'CONTINUOUS'); }
   w(0, 'ENDTAB'); w(0, 'ENDSEC');

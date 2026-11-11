@@ -153,6 +153,11 @@ button.wide{width:100%;text-align:left;display:flex;flex-direction:column;gap:2p
 button.wide .muted{font-size:10.5px}
 kbd{font:10px var(--mono);border:1px solid var(--ln2);border-radius:2px;padding:0 4px;color:var(--tx)}
 #dlg{position:fixed;inset:0;background:rgba(5,5,6,.82);display:none;z-index:61;align-items:center;justify-content:center}
+#dlg .box.imp{width:min(900px,94vw)}
+.imp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin:10px 0}
+.imp-c{flex-direction:column;align-items:flex-start;gap:4px;padding:8px;cursor:pointer;position:relative}
+.imp-c input{position:absolute;top:8px;right:8px}
+.imp-c:not(.on){opacity:.45}
 #dlg .box{width:min(620px,92vw);max-height:88vh;overflow:auto;background:#111113;border:1px solid var(--ln2);border-radius:6px;padding:22px 24px}
 #dlg h4{margin:14px 0 6px;font:600 10px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--tx3)}
 #dlg label.card{cursor:pointer}
@@ -230,6 +235,7 @@ button.fc .n{opacity:.5;font:9px var(--mono);margin-left:4px}
 <div id="libWin"><div class="box" id="libBox"></div></div>
 <input type="file" id="fileImg" accept="image/png,image/jpeg,image/webp,image/svg+xml" style="display:none">
 <input type="file" id="fileProj" accept=".json,application/json" style="display:none">
+<input type="file" id="fileImp" accept=".pdf,.svg,.dxf,application/pdf,image/svg+xml" style="display:none">
 <script>/*APP*/</script>
 </body>
 </html>

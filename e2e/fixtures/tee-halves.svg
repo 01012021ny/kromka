@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- тестовое лекало в духе FreeSewing: мм, y вниз, перед и спинка — половинки «на сгиб», рукав целиком; внутри — линия шва 10 мм -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1200mm" height="800mm" viewBox="0 0 1200 800">
+  <g id="front" transform="translate(40,40)">
+    <path d="M 0 90 L 0 700 L 250 700 L 250 230 C 205 205 190 120 195 30 L 80 0 C 70 55 35 85 0 90 Z" fill="none" stroke="#000"/>
+    <text x="100" y="400">Front</text>
+  </g>
+  <g id="back" transform="translate(360,40)">
+    <path d="M 0 25 L 0 700 L 250 700 L 250 230 C 210 200 195 120 195 30 L 80 0 C 70 18 35 24 0 25 Z" fill="none" stroke="#000"/>
+  </g>
+  <g id="sleeve" transform="translate(680,40)">
+    <path d="M 0 150 C 60 140 130 0 220 0 C 310 0 380 140 440 150 L 390 250 L 50 250 Z" fill="none" stroke="#000"/>
+  </g>
+  <rect x="1100" y="700" width="50" height="50" fill="none" stroke="#000"/>
+</svg>

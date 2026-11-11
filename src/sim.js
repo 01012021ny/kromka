@@ -229,6 +229,15 @@ export function placePoint(piece, x, y, ctx, body, out) {
     // от середины спинки отрицательное s — к правой стороне модели (мир −x), поэтому угол идёт в обратную сторону
     const th = pl.zero === 'cb' ? Math.PI - s / R : s / R;
     out[0] = R * Math.sin(th); out[1] = yy; out[2] = -1.5 + R * Math.cos(th);
+  } else if (pl.kind === 'hood') {
+    // половинка капюшона — полукольцо вокруг головы: край у лица сбоку от лица, глубина — к середине затылка
+    // у горловины (v ≈ 0) низ капюшона охватывает шею от середины переда до середины спинки, выше — голову от края у лица
+    const D = pl.depth || 25, Ln = pl.neck || D * 0.8, side = pl.limb === 'R' ? -1 : 1;
+    const t = Math.max(0, Math.min(1, (y - (pl.y0 ?? y)) / 12));
+    const ph0 = 0.12 + (0.95 - 0.12) * t, W = Ln + (D - Ln) * t;
+    const R = Math.max(t < 1 ? 0 : body.m.height * 0.055 + 2, W / (Math.PI - ph0));
+    const ph = ph0 + (Math.PI - ph0) * Math.min(1.05, Math.abs(x) / W);
+    out[0] = side * R * Math.sin(ph); out[1] = y; out[2] = 0.5 + R * Math.cos(ph);
   } else {
     out[0] = x; out[1] = y; out[2] = 30;
   }
@@ -279,7 +288,7 @@ export class Sim {
     for (const g of garments) {
       if (g.visible === false) continue;
       // внутренние детали (мешковина, откосок, шлёвки) кроятся, но не драпируются
-      const vis = g.pieces.filter((p) => !p.hidden && !p.inner);
+      const vis = g.pieces.filter((p) => !p.hidden && !p.inner && p.place.kind !== 'free'); // «отдельно» — только крой, не надевается
       if (!vis.length) continue;
       const ctx = placementCtx(g, body, vis);
       const counts = {};

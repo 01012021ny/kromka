@@ -13,6 +13,7 @@ export function doExport(app, kind) {
   $('#menu').style.display = 'none';
   if (kind === 'json') app.save('kromka-proekt.json', JSON.stringify({ app: 'kromka', v: 1, body: S.body, materials: S.materials, garments: S.garments, accessories: S.accessories, images: S.images, settings: S.settings }));
   if (kind === 'open') document.getElementById('fileProj').click();
+  if (kind === 'import') document.getElementById('fileImp').click();
   if (kind === 'png') { const d = app.view3d.snapshotPNG(); fetch(d).then((r) => r.blob()).then((b) => app.save('kromka-3d.png', b)); }
   if (kind === 'svg') app.save('kromka-lekala.svg', exportSVG(app));
   if (kind === 'prod') openExport(app);

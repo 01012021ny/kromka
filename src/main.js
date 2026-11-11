@@ -1,7 +1,8 @@
 // @ts-check
 import * as THREE from 'three';
 import { Body, BODY_DEFAULT, measure } from './body.js';
-import { GENERATORS, GEN_DEFAULTS, buildPiece, seamOf, findPiece, adaptParams, fitSnap } from './patterns.js';
+import { GENERATORS, GEN_DEFAULTS, buildPiece, seamOf, findPiece, adaptParams, fitSnap, edgeK, edgePts } from './patterns.js';
+import { edgesFromOutline } from './importer.js';
 import { Sim, seamRev } from './sim.js';
 import { SimProxy } from './simproxy.js';
 import { makeMaterial, PRESETS, physics } from './materials.js';
@@ -230,16 +231,120 @@ const REF_FIT = fitSnap(measure(BODY_DEFAULT));
 /** изделия, построенные под другую фигуру (разница > 1 см по груди, бёдрам, росту или колену) */
 app.fitMismatch = () => {
   const cur = fitSnap(body.m);
-  return S.garments.filter((g) => { const f = g.fitM || REF_FIT; return ['chest', 'hips', 'height', 'knee', 'armLen'].some((k) => Math.abs(f[k] - cur[k]) > 1); });
+  return S.garments.filter((g) => { if (!GENERATORS[g.gen]) return false; const f = g.fitM || REF_FIT; return ['chest', 'hips', 'height', 'knee', 'armLen'].some((k) => Math.abs(f[k] - cur[k]) > 1); });
 };
 /** подогнать лекала всех изделий под текущий манекен: длины и обхваты переносятся, ручные правки сбрасываются */
 app.refitAll = () => {
   const cur = fitSnap(body.m);
   app.commit('Подогнать под фигуру');
-  for (const g of S.garments) { g.params = adaptParams(g.gen, g.params, g.fitM || REF_FIT, cur); g.fitM = cur; app.regenerate(g, false); }
+  for (const g of S.garments) { if (!GENERATORS[g.gen]) continue; g.params = adaptParams(g.gen, g.params, g.fitM || REF_FIT, cur); g.fitM = cur; app.regenerate(g, false); }
   rebuildSim(true);
   UI.renderLeft(app);
   app.toast('Лекала подогнаны под фигуру манекена', 'pos');
+};
+// ───────── импорт лекал из файла (PDF, SVG, DXF) ─────────
+/** детали из importer.js → новое изделие; детали «отдельно» (не на манекене), пока им не назначат место */
+app.addImported = (fileName, list) => {
+  if (!list.length) return null;
+  app.commit('Импорт лекал');
+  const mat = app.ensureMaterial('pop120'); // поплин — нейтральная тканая основа; ткань меняется во вкладке «Ткани»
+  const g = { id: uid('g'), gen: 'import', preset: null, name: 'Импорт: ' + fileName.replace(/\.[^.]+$/, ''), params: {}, layer: 99, visible: true, pieces: [], seams: [], viewOff: { x: 0, y: 0 }, baseMat: mat.id, grading: defaultGrading('M'), imported: true };
+  let maxX = -Infinity;
+  for (const og of S.garments) for (const p of og.pieces) { const b = bbox(p.pts); maxX = Math.max(maxX, b.x1 + p.view.x); }
+  let cur = isFinite(maxX) ? maxX + 40 : 0;
+  list.forEach((it, i) => {
+    const b = bbox(it.outline), cx = (b.x0 + b.x1) / 2;
+    const sh = (q) => [q[0] - cx, q[1] - b.y0]; // середина по x = 0, низ на 0
+    const edges = edgesFromOutline(it.outline.map(sh), it.sa, it.cut ? it.cut.map(sh) : null);
+    const p = buildPiece(it.name || `Деталь ${i + 1}`, edges, { place: { kind: 'free' }, view: { x: cur + b.w / 2, y: 0 } });
+    delete p._edgeIds; delete p._tags;
+    p.mat = mat.id; p.base = p.name;
+    cur += b.w + 8;
+    g.pieces.push(p);
+  });
+  S.garments.push(g);
+  normalizeLayers();
+  allTextures(); rebuildSim(); scheduleLayout();
+  app.select({ g: g.id, p: g.pieces[0].id });
+  UI.renderLeft(app); editor.dirty = true; setTimeout(() => editor.fit(), 30); autosave();
+  app.toast(`Импортировано деталей: ${g.pieces.length}. Назначьте каждой место на манекене и сшейте инструментом «Шов»`, 'pos');
+  return g;
+};
+/** место детали на манекене: роль → place и сдвиг лекала на высоту, где деталь носят */
+const ROLE_PLACE = {
+  free: { kind: 'free' }, front: { kind: 'torso', side: 'front' }, back: { kind: 'torso', side: 'back' },
+  armL: { kind: 'arm', limb: 'L' }, armR: { kind: 'arm', limb: 'R' },
+  legLF: { kind: 'leg', limb: 'L', side: 'front' }, legLB: { kind: 'leg', limb: 'L', side: 'back' }, legRF: { kind: 'leg', limb: 'R', side: 'front' }, legRB: { kind: 'leg', limb: 'R', side: 'back' },
+};
+app.roleOf = (p) => Object.keys(ROLE_PLACE).find((k) => { const r = ROLE_PLACE[k]; return r.kind === p.place.kind && (r.side || 'front') === (p.place.side || 'front') && (r.limb || '') === (p.place.limb || ''); }) || 'free';
+app.placePiece = (g, p, role) => {
+  const pl = ROLE_PLACE[role]; if (!pl) return;
+  app.commit('Место детали на манекене');
+  p.place = { ...pl };
+  const b = bbox(p.pts), cx = (b.x0 + b.x1) / 2, Y = body.m.y;
+  // верх детали: торс — у основания шеи, рукав — вершина оката в 0, брючина — у талии
+  const top = pl.kind === 'torso' ? Y.neckBase + 1 : pl.kind === 'arm' ? 0 : pl.kind === 'leg' ? Y.waist : null;
+  if (top != null) movePiece(p, -cx, top - b.y1);
+  for (const s of g.seams) if (s.a.p === p.id || s.b.p === p.id) s.rev = seamRev(g, s, body);
+  view3d.texCache.delete(p.id); app.updateTex([p.id]);
+  app.changed({ geo: true, layout: true });
+};
+/** детали импортированного изделия на столе — в ряд слева направо, без наложений (после разворота и поворота) */
+function arrangeRow(g) {
+  if (!g.pieces.length) return;
+  let cur = Math.min(...g.pieces.map((p) => bbox(p.pts).x0 + p.view.x));
+  for (const p of g.pieces) { const b = bbox(p.pts); p.view.x = cur - b.x0; cur += b.w + 8; }
+}
+/** сдвиг лекала детали (координаты на теле), вид на столе остаётся на месте */
+function movePiece(p, dx, dy) {
+  const sh = (q) => { q[0] += dx; q[1] += dy; };
+  p.pts.forEach(sh);
+  for (const o of p.overlays || []) o.pts.forEach(sh);
+  for (const st of p.strokes || []) st.pts.forEach(sh);
+  for (const h of p.hardware || []) { h.x += dx; h.y += dy; }
+  for (const r of p.prints || []) { if (r.x != null) { r.x += dx; r.y += dy; } }
+  p.view.x -= dx; p.view.y -= dy;
+}
+app.nudgePiece = (g, p, dy) => { app.commit('Высота детали'); movePiece(p, 0, dy); for (const s of g.seams) if (s.a.p === p.id || s.b.p === p.id) s.rev = seamRev(g, s, body); app.changed({ geo: true }); };
+/** повернуть (90°/180°) или отразить деталь — для импортированных лекал, нарисованных боком */
+app.turnPiece = (g, p, how) => {
+  app.commit(how === 'mirror' ? 'Отразить деталь' : 'Повернуть деталь');
+  const b = bbox(p.pts), cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+  const f = how === 'mirror' ? (q) => [2 * cx - q[0], q[1]] : how === '180' ? (q) => [2 * cx - q[0], 2 * cy - q[1]] : (q) => [cx - (q[1] - cy), cy + (q[0] - cx)];
+  const pts = p.pts.map(f);
+  if (how === 'mirror') { // отражение меняет обход — развернуть порядок, сохранив стороны
+    const ed = p.corners.map((c, k) => ({ ...p.meta[c.id], pts: edgePts(p, k).map(f) })).reverse().map((e) => ({ ...e, pts: e.pts.slice().reverse() }));
+    const np = buildPiece(p.name, ed, { place: p.place, view: p.view });
+    Object.assign(p, { pts: np.pts, corners: np.corners, meta: np.meta });
+    g.seams = g.seams.filter((s) => s.a.p !== p.id && s.b.p !== p.id); // стороны получили новые id — швы детали сшить заново
+  } else p.pts = pts;
+  for (const o of p.overlays || []) o.pts = o.pts.map(f);
+  arrangeRow(g);
+  view3d.texCache.delete(p.id); app.updateTex([p.id]);
+  app.changed({ geo: true, layout: true });
+};
+/** развернуть половинку по сгибу: зеркально по выбранной прямой стороне → целая деталь */
+app.unfoldPiece = (g, p, cid) => {
+  const k = edgeK(p, cid), e = edgePts(p, k), a = e[0], z = e[e.length - 1];
+  const dx = z[0] - a[0], dy = z[1] - a[1], L = Math.hypot(dx, dy);
+  const dev = Math.max(...e.map((q) => Math.abs((q[0] - a[0]) * dy - (q[1] - a[1]) * dx) / (L || 1)));
+  if (L < 2 || dev > 0.4) { app.toast('Сгиб — только по прямой стороне (отклонение > 4 мм)', 'neg'); return; }
+  app.commit('Развернуть по сгибу');
+  const ux = dx / L, uy = dy / L;
+  const refl = (q) => { const px = q[0] - a[0], py = q[1] - a[1], t = px * ux + py * uy; return [a[0] + 2 * t * ux - px, a[1] + 2 * t * uy - py]; };
+  const n = p.corners.length, ed = [];
+  for (let j = 1; j < n; j++) { const kk = (k + j) % n; ed.push({ ...p.meta[p.corners[kk].id], pts: edgePts(p, kk) }); } // от конца сгиба по кругу
+  const mir = ed.map((x) => ({ ...x, name: x.name ? x.name + ' (2)' : '', pts: x.pts.map(refl).reverse() })).reverse();
+  const np = buildPiece(p.name, [...ed, ...mir], { place: p.place, view: p.view });
+  g.seams = g.seams.filter((s) => s.a.p !== p.id && s.b.p !== p.id);
+  Object.assign(p, { pts: np.pts, corners: np.corners, meta: np.meta });
+  // на теле: целая деталь торса/брючины — серединой на середину тела
+  if (p.place.kind === 'torso') { const b = bbox(p.pts); movePiece(p, -(b.x0 + b.x1) / 2, 0); }
+  arrangeRow(g);
+  view3d.texCache.delete(p.id); app.updateTex([p.id]);
+  app.select({ g: g.id, p: p.id });
+  app.changed({ geo: true, layout: true });
+  app.toast('Деталь развёрнута по сгибу — швы этой детали нужно сшить заново', 'pos');
 };
 // изделие из карточки библиотеки (или базового пресета) — без пересборки сцены
 function createGarment(pr) {
@@ -330,6 +435,7 @@ function generate(g, matId) {
   for (const s of g.seams) s.rev = seamRev(g, s, body);
 }
 app.regenerate = (g, commit = true) => {
+  if (!GENERATORS[g.gen]) return; // импортированное изделие — без генератора
   if (commit) app.commit('Параметры изделия');
   for (const p of g.pieces) view3d.texCache.delete(p.id);
   generate(g);
@@ -549,6 +655,11 @@ document.getElementById('fileProj').addEventListener('change', (e) => {
   const rd = new FileReader();
   rd.onload = () => { try { app.loadProject(JSON.parse(/** @type {string} */ (rd.result))); app.toast('Проект открыт', 'pos'); } catch (err) { app.toast('Не удалось прочитать файл проекта', 'neg'); } };
   rd.readAsText(f);
+});
+
+document.getElementById('fileImp').addEventListener('change', (e) => {
+  const inp = /** @type {HTMLInputElement} */ (e.target), f = inp.files[0]; inp.value = ''; if (!f) return;
+  UI.importFromFile(app, f);
 });
 
 // ───────── toast ─────────

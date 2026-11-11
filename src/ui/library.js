@@ -4,6 +4,7 @@ import { LIBRARY, DESIGNERS, OUTFITS, OPEN_SOURCES, searchLibrary, facets, outfi
 import { PRESETS } from '../materials.js';
 import { esc } from '../util.js';
 import { $ } from './controls.js';
+import { pickImportFile } from './importdlg.js';
 
 const GEN_LABEL = { top: 'плечевое', pants: 'поясное · брюки', skirt: 'поясное · юбка', snood: 'аксессуар из ткани' };
 export const LEVEL = (n) => '●'.repeat(n) + '○'.repeat(3 - n);
@@ -80,7 +81,9 @@ function renderLibList(app) {
   if (v === 'sources') {
     $('#libN').textContent = 'Открытые и бесплатные лекала вне КРОМКИ — для своей работы и как образцы приёмов';
     el.className = 'lw-src';
-    el.innerHTML = OPEN_SOURCES.map((o) => `<div class="src"><b>${esc(o.n)}</b> <span class="chip">${esc(o.lic)}</span><div class="muted">${esc(o.what)}</div><div class="muted mono">${esc(o.url)}</div></div>`).join('');
+    el.innerHTML = `<div class="src"><button id="lwImp">Импортировать файл лекал…</button> <span class="muted">PDF (лучше A0 «копицентр»), SVG, DXF-AAMA — детали появятся в проекте, их можно надеть на манекен и сшить</span></div>`
+      + OPEN_SOURCES.map((o) => `<div class="src"><b>${esc(o.n)}</b> <span class="chip">${esc(o.lic)}</span><div class="muted">${esc(o.what)}</div><div class="muted mono">${esc(o.url)}</div></div>`).join('');
+    $('#lwImp').onclick = () => { closeLibrary(); pickImportFile(); };
     return;
   }
   if (v === 'outfits') {

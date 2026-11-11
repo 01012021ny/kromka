@@ -51,6 +51,28 @@ function inspGarment(app, R, g) {
   bindLining(app, g);
   bindSpec(app, g, () => { const R2 = $('#right'), st = R2.scrollTop; renderRight(app); R2.scrollTop = st; });
 }
+// ── место детали на манекене (импортированные лекала и детали «отдельно»)
+const ROLES = [['free', 'отдельно — только крой'], ['front', 'перед'], ['back', 'спинка'], ['armL', 'рукав левый'], ['armR', 'рукав правый'], ['legLF', 'брючина: левая, перед'], ['legLB', 'брючина: левая, зад'], ['legRF', 'брючина: правая, перед'], ['legRB', 'брючина: правая, зад']];
+function placeHTML(app, g, p) {
+  if (g?.gen !== 'import' && p.place.kind !== 'free') return '';
+  const role = app.roleOf(p), sel = app.sel.edge;
+  return `<div class="sec"><h3>Место на манекене</h3>
+  <div class="row"><select id="plRole" style="flex:1">${ROLES.map(([v, n]) => `<option value="${v}" ${v === role ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+  <p class="note">Перед и спинка: середина детали — по середине тела, верх — у основания шеи. Рукав: верх оката — к плечу. Брючина: верх — на талии. Деталь-половинку «на сгиб» сначала разверните.</p>
+  <div class="row" style="flex-wrap:wrap"><button class="sm" id="plR90" title="Повернуть на 90° против часовой">↺ 90°</button><button class="sm" id="plR180">180°</button><button class="sm" id="plMir">Отразить</button>
+  ${role !== 'free' && role.slice(0, 3) !== 'arm' ? '<button class="sm" id="plUp" title="Поднять на 1 см">выше</button><button class="sm" id="plDn" title="Опустить на 1 см">ниже</button>' : ''}</div>
+  ${sel ? `<button class="sm" id="plFold" style="margin-top:6px">Развернуть по сгибу — выбранная сторона</button>` : '<p class="note">Чтобы развернуть половинку по сгибу — выберите прямую сторону-сгиб в таблице ниже.</p>'}</div>`;
+}
+function bindPlace(app, g, p) {
+  if (!$('#plRole')) return;
+  $('#plRole').onchange = (e) => app.placePiece(g, p, e.target.value);
+  $('#plR90').onclick = () => app.turnPiece(g, p, '90');
+  $('#plR180').onclick = () => app.turnPiece(g, p, '180');
+  $('#plMir').onclick = () => app.turnPiece(g, p, 'mirror');
+  if ($('#plUp')) $('#plUp').onclick = () => app.nudgePiece(g, p, 1);
+  if ($('#plDn')) $('#plDn').onclick = () => app.nudgePiece(g, p, -1);
+  if ($('#plFold')) $('#plFold').onclick = () => app.unfoldPiece(g, p, app.sel.edge);
+}
 // ── откуда изделие: карточка библиотеки, ассоциации, детали карточки
 function libHTML(g) {
   const it = findItem(g.preset);
@@ -60,10 +82,13 @@ function libHTML(g) {
   ${it.decor ? `<div class="row" style="margin-top:4px"><label>Детали карточки (молнии, люверсы, края)</label><button class="sm ${g.libDecor === false ? '' : 'on'}" id="gLib">${g.libDecor === false ? 'выкл' : 'вкл'}</button></div>` : ''}</div>`;
 }
 // ── обработка выбранного края: обтачка / косая бейка
+// названия сторон, от которых зависят обручи горловины/пояса/низа в 3D, строчки и шаги пошива
+const EDGE_NAMES = ['горловина', 'плечо', 'пройма', 'бок', 'низ', 'середина переда', 'середина спинки', 'борт', 'оккат', 'низ рукава', 'пояс', 'шаг', 'сгиб'];
 function edgeFinishHTML(g, p, cid) {
   if (!cid || !p.meta[cid]) return '<p class="note">Выберите сторону (клик по строке или по краю детали) — появятся обтачка и бейка в один клик.</p>';
   const m = p.meta[cid], sewn = seamOf(g, p.id, cid);
-  return `<div class="finish"><h3 style="margin-top:10px">Обработка края «${esc(m.name || 'сторона')}»</h3>
+  return `<div class="finish"><div class="row" style="margin-top:8px"><label>Название стороны</label><input id="eName" list="eNames" value="${esc(m.name || '')}" style="flex:1"><datalist id="eNames">${EDGE_NAMES.map((n) => `<option value="${n}">`).join('')}</datalist></div>
+  <h3 style="margin-top:10px">Обработка края «${esc(m.name || 'сторона')}»</h3>
   ${sewn ? '<p class="note">Сторона сшита с другой деталью — обтачка и бейка нужны открытым краям: горловине, пройме, низу, борту.</p>' : `
   <div class="row"><button class="sm" id="fFace">Обтачка</button><label style="flex:0 0 auto">ширина</label><input type="number" id="fFaceW" value="4" step="0.5" min="2" max="12" style="width:52px"><span class="muted">см</span></div>
   <div class="row"><button class="sm" id="fBind">Косая бейка</button><label style="flex:0 0 auto">готовая</label><input type="number" id="fBindW" value="1" step="0.1" min="0.4" max="3" style="width:52px"><span class="muted">см</span></div>
@@ -99,6 +124,7 @@ function bindZip(app, g, p, cid) {
   if ($('#rwGo')) $('#rwGo').onclick = () => app.hardwareRow(g, p, cid, { type: $('#rwT').value, step: +$('#rwS').value || 3, inset: +$('#rwI').value || 1.2, size: +$('#rwD').value || 1.2, color: $('#rwC').value });
 }
 function bindEdgeFinish(app, g, p, cid) {
+  if ($('#eName')) $('#eName').onchange = (e) => { app.commit('Название стороны'); p.meta[cid].name = e.target.value.trim(); app.changed({ geo: true, tex: [p.id] }); };
   const done = (r, label) => {
     if (r.error) { app.toast(r.error, 'neg'); return; }
     app.updateTex([p.id, r.piece.id]);
@@ -180,6 +206,7 @@ function inspPiece(app, R, p) {
   <div class="row"><label>Симметричная правка</label><button class="sm ${p.sym ? 'on' : ''}" id="pSym">${p.sym ? 'вкл' : 'выкл — асимметрия'}</button></div>
   <dl class="kv"><dt>Площадь</dt><dd>${fmt(Math.abs(area(p.pts)) / 100, 1)} дм² (с припусками ${fmt(Math.abs(area(co)) / 100, 1)})</dd><dt>Масса</dt><dd>${fmt((Math.abs(area(co)) / 1e4) * (mats[p.mat]?.gsm || 0), 0)} г</dd><dt>Габарит</dt><dd>${fmt(bbox(p.pts).w)} × ${fmt(bbox(p.pts).h)} см</dd></dl>
   <div class="row" style="flex-wrap:wrap"><button class="sm" id="pDup">Дублировать</button><button class="sm" id="pMir">Зеркальная копия</button><button class="sm danger" id="pDel">Удалить</button></div></div>
+  ${placeHTML(app, g, p)}
   <div class="sec"><h3>Стороны <span class="help-i" title="Припуск (см), сырой край, резинка (коэф. сборки), сверка длины шва: зелёный — совпадает, красный — расхождение">i</span></h3>
   <table class="e"><tr><th>сторона</th><th>длина</th><th>припуск</th><th>сыр.</th><th>рез.</th><th>шов</th></tr>${rows}</table>
   ${edgeFinishHTML(g, p, sel.edge)}</div>
@@ -194,6 +221,7 @@ function inspPiece(app, R, p) {
   $('#pDup').onclick = () => { app.commit('Дублировать'); const c = duplicatePiece(g, p, false); app.updateTex([c.id]); app.select({ p: c.id }); app.changed({ geo: true, layout: true }); };
   $('#pMir').onclick = () => { app.commit('Зеркальная копия'); const c = duplicatePiece(g, p, true); app.updateTex([c.id]); app.select({ p: c.id }); app.changed({ geo: true, layout: true }); };
   $('#pDel').onclick = () => deleteSelected(app, true);
+  bindPlace(app, g, p);
   bindEdgeFinish(app, g, p, sel.edge);
   bindZip(app, g, p, sel.edge);
   R.querySelectorAll('[data-edge]').forEach((tr) => (tr.onclick = (e) => { if (e.target.tagName === 'INPUT') return; app.select({ g: g.id, p: p.id, edge: tr.dataset.edge }); }));

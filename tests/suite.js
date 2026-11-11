@@ -14,6 +14,9 @@ import { addFacing, addBinding, addLining, removeLining } from '../src/finish.js
 import { makeAcc, buildAccessory, shoeShape } from '../src/accessories.js';
 import { bbox, inside as inPoly, polyLen } from '../src/util.js';
 import { LIBRARY, OUTFITS, DESIGNERS, findItem, searchLibrary, facets, applyDecor } from '../src/library.js';
+import { importPatternFile, parseSVG, edgesFromOutline } from '../src/importer.js';
+import zlib from 'zlib';
+import { readFileSync } from 'fs';
 import { addDecorZip, setSeamZip, zipEdges, zipPartner, hardwareAlong, zipList, pruneZipPulls, removeStroke } from '../src/hardware.js';
 
 let pass = 0, fail = 0;
@@ -459,6 +462,65 @@ console.log('Размер и посадка: манекен, якоря поса
   const t2 = tangled(sim2, A.g, B.g);
   let nan = 0; for (let i = 0; i < sim2.N * 3; i++) if (!isFinite(sim2.x[i])) nan++;
   ok('захват пятном и рывок: слои распутываются после отпускания', patch > 3 && !nan && t2.bad < t2.n * 0.02, `пятно ${patch} т., перепутано ${t2.bad} из ${t2.n}`);
+}
+
+console.log('Капюшон');
+for (const [id, extra] of [['over', { hood: 1 }], ['coat', { hood: 1, overlap: 0 }]]) {
+  const pr = GARMENT_PRESETS.find((p) => p.id === id), mat = makeMaterial('ter320');
+  const out = GENERATORS.top(body.m, { ...pr.p, ...extra });
+  const g = { id, pieces: out.pieces, seams: out.seams, layer: 1 };
+  for (const p of g.pieces) p.mat = mat.id;
+  for (const sm of g.seams) sm.rev = seamRev(g, sm, body);
+  const hs = g.seams.filter((x) => /Капюшон/.test(x.name)), worst = Math.max(...hs.map((x) => Math.abs(seamLengths(g, x).diff)));
+  ok(`${id}: капюшон из двух половин, 5 швов, длины сходятся`, g.pieces.filter((p) => p.place.kind === 'hood').length === 2 && hs.length === 5 && worst < 0.35, `Δ ${worst.toFixed(2)}`);
+  const sim = new Sim(body); sim.build([g], { [mat.id]: mat }, 2.6);
+  for (let f = 0; f < 300; f++) { sim.step(1 / 60); sim.computeNormals(); }
+  let gap = 0, nan = 0, hy = -1e9;
+  for (let i = 0; i < sim.N * 3; i++) if (!isFinite(sim.x[i])) nan++;
+  for (let c = 0; c < sim.sw.length; c += 2) { const a = 3 * sim.sw[c], b = 3 * sim.sw[c + 1]; gap = Math.max(gap, Math.hypot(sim.x[a] - sim.x[b], sim.x[a + 1] - sim.x[b + 1], sim.x[a + 2] - sim.x[b + 2])); }
+  for (const r of sim.pieces) if (r.piece.place.kind === 'hood') for (let i = r.off; i < r.off + r.n; i++) hy = Math.max(hy, sim.x[3 * i + 1]);
+  ok(`${id}: капюшон в 3D на голове, швы сошлись`, !nan && gap < 1.5 && hy > body.m.y.headC, `зазор ${gap.toFixed(2)} см, верх капюшона ${hy.toFixed(0)}`);
+}
+
+console.log('Импорт лекал: DXF, SVG, PDF');
+{
+  // DXF: наш экспорт → импорт — те же площади и припуски по сторонам
+  const { g, mat } = make('tee');
+  const d = dxf({ matsById: () => ({ [mat.id]: mat }) }, [{ g, size: 'M', pieces: g.pieces }]);
+  const r = await importPatternFile('tee.dxf', d);
+  const srcA = g.pieces.map((p) => Math.abs(pieceArea(p))).sort((a, b) => b - a), impA = r.pieces.map((p) => p.area).sort((a, b) => b - a);
+  ok('DXF: все детали, площади совпадают (±1%)', r.pieces.length === g.pieces.length && srcA.every((a, i) => Math.abs(impA[i] - a) < a * 0.01), impA.map((a) => a.toFixed(0)).join(','));
+  ok('DXF: единицы из заголовка — мм', r.unit === 'mm' && r.unitFromFile);
+  const front = g.pieces.find((p) => p.name === 'Перед'), fi = r.pieces.find((p) => Math.abs(p.area - Math.abs(pieceArea(front))) < 5);
+  const sas = edgesFromOutline(fi.outline, fi.sa, fi.cut).map((e) => e.sa).sort().join('/'), want = front.corners.map((c) => front.meta[c.id].sa).sort().join('/');
+  ok('DXF: припуск каждой стороны — по расстоянию между линией шва и реза', sas === want, `${sas} vs ${want}`);
+  // SVG как у FreeSewing (мм, y вниз, кривые, группы с transform); контрольный квадрат помечен
+  const svg = readFileSync(new URL('../e2e/fixtures/tee-halves.svg', import.meta.url), 'utf8');
+  const rs = await importPatternFile('tee.svg', svg);
+  ok('SVG: 3 детали + контрольный квадрат 5×5 помечен', rs.pieces.length === 4 && rs.pieces.filter((p) => p.test).length === 1 && Math.abs(rs.pieces[0].h - 70) < 0.2 && Math.abs(rs.pieces[0].w - 25) < 0.2, rs.pieces.map((p) => `${p.w.toFixed(1)}×${p.h.toFixed(1)}`).join(' '));
+  const sv = parseSVG(svg);
+  ok('SVG: y перевёрнут (вверх), единицы мм', sv.unit === 'mm' && sv.paths.every((pp) => pp.pts.every((q) => q[1] <= 0)));
+  // PDF: деталь отрезками (несжато) + форма XObject со сжатием (контур реза и линия шва) + рамка листа + квадрат + текст
+  const mm = 72 / 25.4, seg = [[0, 0], [300, 0], [300, 400], [150, 480], [0, 400]].map(([x, y]) => [x * mm + 50, y * mm + 50]);
+  let c1 = '0 0 0 RG 0.5 w\n';
+  for (let i = 0; i < seg.length; i++) { const a = seg[i], b = seg[(i + 1) % seg.length]; c1 += `${a[0].toFixed(2)} ${a[1].toFixed(2)} m ${b[0].toFixed(2)} ${b[1].toFixed(2)} l S\n`; }
+  c1 += `${(10 * mm).toFixed(2)} ${(10 * mm).toFixed(2)} ${(50 * mm).toFixed(2)} ${(50 * mm).toFixed(2)} re S\n0 0 ${(841 * mm).toFixed(2)} ${(1189 * mm).toFixed(2)} re S\n`;
+  c1 += 'BT /F1 12 Tf 100 100 Td (Front) Tj ET\nq 1 0 0 1 400 0 cm /Fm1 Do Q\n';
+  const sq = (x, y, w, h) => `${x} ${y} m ${x + w} ${y} l ${x + w} ${y + h} l ${x} ${y + h} l h S\n`;
+  const fz = zlib.deflateSync(Buffer.from(sq(1200, 100, 200 * mm, 300 * mm) + sq(1200 + 10 * mm, 100 + 10 * mm, 180 * mm, 280 * mm)));
+  let pdf = '%PDF-1.5\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n';
+  pdf += `2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 ${(841 * mm).toFixed(2)} ${(1189 * mm).toFixed(2)}] >>\nendobj\n`;
+  pdf += '3 0 obj\n<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /XObject << /Fm1 5 0 R >> >> >>\nendobj\n';
+  pdf += `4 0 obj\n<< /Length ${c1.length} >>\nstream\n${c1}\nendstream\nendobj\n`;
+  const bytes = new Uint8Array(Buffer.concat([Buffer.from(pdf + `5 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 3000 3000] /Filter /FlateDecode /Length ${fz.length} >>\nstream\n`, 'latin1'), fz, Buffer.from('\nendstream\nendobj\ntrailer << /Root 1 0 R >>\n%%EOF\n', 'latin1')]));
+  const rp = await importPatternFile('a0.pdf', bytes);
+  const big = rp.pieces.filter((p) => !p.test);
+  ok('PDF: деталь из отрезков собрана, из формы со сжатием — по линии шва с припуском 1 см, рамка листа отброшена', big.length === 2 && Math.abs(big[0].w - 30) < 0.1 && Math.abs(big[0].h - 48) < 0.1 && big[1].sa === 1 && Math.abs(big[1].w - 18) < 0.1 && rp.pieces.some((p) => p.test), rp.pieces.map((p) => `${p.w.toFixed(1)}×${p.h.toFixed(1)}/${p.sa}`).join(' '));
+  ok('PDF: углы пятиугольника — 5 сторон', edgesFromOutline(big[0].outline).length === 5);
+  // лекало, разрезанное на листы A4: контуры не замыкаются → понятное предупреждение
+  const open = '%PDF-1.4\n1 0 obj\n<< /Type /Page /MediaBox [0 0 595 842] /Contents 2 0 R >>\nendobj\n2 0 obj\n<< >>\nstream\n' + Array.from({ length: 30 }, (_, i) => `${10 + i * 15} 10 m ${10 + i * 15} 900 l S`).join('\n') + '\nendstream\nendobj\n';
+  const ro = await importPatternFile('tiles.pdf', open);
+  ok('PDF A4 со склейкой: детали не найдены, совет взять A0', !ro.pieces.length && ro.warn.some((w) => /A0/.test(w)));
 }
 
 console.log(`\n${pass} пройдено, ${fail} провалено`);

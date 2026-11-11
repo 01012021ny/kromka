@@ -11,6 +11,7 @@ export { setTool } from './ui/toolbar.js';
 export { renderLeft, renderBodyReadout, renderTree } from './ui/left.js';
 export { renderRight } from './ui/inspector.js';
 export { pushRecent, openLibrary } from './ui/library.js';
+export { importFromFile } from './ui/importdlg.js';
 export { renderStats, renderWaste } from './ui/status.js';
 export { drawLayout } from './ui/layoutview.js';
 
@@ -57,6 +58,7 @@ export function init(app) {
     ['png', 'Снимок 3D — PNG', 'текущий вид'],
     ['json', 'Сохранить проект — JSON', 'всё: манекен, ткани, лекала, принты'],
     ['open', 'Открыть проект…', 'из файла JSON'],
+    ['import', 'Импорт лекал…', 'PDF (лучше A0), SVG (FreeSewing, Inkscape), DXF-AAMA (CLO, Gerber, Optitex) → детали'],
     ['new', 'Новый проект', 'начать с пустого манекена'],
   ].map(([id, t, s]) => `<button data-x="${id}">${t}<span class="s">${s}</span></button>`).join('');
   $('#menu').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) doExport(app, b.dataset.x); });
